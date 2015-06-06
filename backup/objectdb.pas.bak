@@ -1,0 +1,361 @@
+unit ObjectDB;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils,
+
+  BPlusTreeUnit;
+
+const MaxKindLength = 31;
+
+type
+
+  KindString = String[MaxKindLength];
+
+  { TObjectDBRecordHeader }
+
+  TObjectDBRecordHeader = record
+    Index  : Longint;     // 0 based index in file. monotonically increasing
+    Offset : Longint;     // Octed offset in file.  0 if NOT written yet.
+    Next   : Longint;     // Points to next record in the chain. 0 if at end.
+    Prev   : LongInt;     // Points to previous record in the chain, 0 if first record.
+    Kind   : KindString;  // Object's type name code
+    Vers   : LongInt;     // Object's version
+    Size   : LongInt;     // Size in Octets as written (so read knows how much to get)
+  end;
+
+  { TObjectDBHeader }
+
+  TObjectDBHeader = record
+    FirstAvail  : Longint;  // Points to first available octet at end of file
+    FirstRecord : Longint; // Points to first record in the chain, 0 if none
+    LastRecord  : Longint;  // Points to the last record in the chain. 0 if none
+    FirstFree   : Longint;  // Points to first free space record in file 0 if nono
+    NextIndex   : LongInt;  // The next available index
+  end;
+
+  { TObjectDBRecord }
+
+  TObjectDBRecord = class
+    protected
+      vHeader : TObjectDBRecordHeader;
+    public
+      constructor Create; virtual;
+      constructor Create( Header : TObjectDBRecordHeader );
+
+      destructor  Destroy; override;
+
+      class function  Read( Stream : TStream; Offset : LongInt ) : TObjectDBRecord;
+      procedure Write( Stream : TStream;
+                       Index, Offset, Next, Prev : LongInt ); virtual;
+      procedure Load( Stream : TStream ); virtual;
+      function Size : Longint; virtual;
+
+      function HexDump( List : TStrings ) : Longint; virtual;
+      procedure DumpData( List : TStrings ); virtual;
+
+      property Next : LongInt read vHeader.Next;
+  end;
+
+  { TObjectDB }
+
+  TObjectDB = class( TFileStream )
+    protected
+      Header : TObjectDBHeader;
+      vIdx   : TBPlusTree; // B-Tree for accessing the Index value of records
+    public
+      constructor Create( theFileName : String );
+      constructor Open( theFileName : String );
+
+      destructor  Destroy; override;
+
+      procedure WriteHeader;
+      procedure ReadHeader;
+
+      procedure RegisterClass( aClass : TClass );
+
+      procedure Write( Data : TObjectDBRecord ); overload;
+      procedure Remove( Index : LongInt );
+
+      { Development Aids }
+      procedure HexDump( List : TStrings );
+      procedure DumpHeaders( List : TStrings );
+      procedure DumpData( List : TStrings );
+
+  end;
+
+implementation
+
+uses
+  StringSubs,
+  Forms, // For development
+  ObjectFactory1,
+  CommonIO;
+
+{ TObjectDBRecord }
+
+constructor TObjectDBRecord.Create(Header: TObjectDBRecordHeader);
+begin
+  vHeader := Header;
+end;
+
+constructor TObjectDBRecord.Create;
+begin
+  inherited;
+end;
+
+destructor TObjectDBRecord.Destroy;
+begin
+  inherited Destroy;
+end;
+
+procedure TObjectDBRecord.DumpData(List: TStrings);
+begin
+  List.Add('Index:   ' + IntToHex( vHeader.Index, 8 ) );
+  List.Add('Kind:    ' + vHeader.Kind + '  ' + ClassName);
+  List.Add('Vers:    ' + IntToStr( vHeader.Vers ) );
+end;
+
+function TObjectDBRecord.HexDump(List: TStrings): Longint;
+begin
+  List.Add('Index:    ' + IntToHex( vHeader.Index, 8 ) );
+  List.Add('Offset:   ' + IntToHex( vHeader.Offset, 8 ) );
+  List.Add('Next:     ' + IntToHex( vHeader.Next, 8 ) );
+  List.Add('Prev:     ' + IntToHex( vHeader.Prev, 8 ) );
+  List.Add('Size:     ' + IntToHex( vHeader.Size, 8 ) );
+  List.Add('Kind:     ' + vHeader.Kind );
+  List.add('Vers:     ' + IntToStr( vHeader.Vers ) );
+  Result := vHeader.Next;
+end;
+
+procedure TObjectDBRecord.Load(Stream: TStream);
+begin
+  // Nothing needed here (Read takes care of common stuff
+end;
+
+class function TObjectDBRecord.Read( Stream : TStream; Offset : LongInt ) : TObjectDBRecord;
+var
+  lHeader : TObjectDBRecordHeader;
+begin
+  Stream.Seek( Offset, soBeginning );
+  Stream.ReadBuffer( lHeader, Sizeof( TObjectDBRecordHeader ) );
+  Result := ObjectFactory.MakeObject( lHeader.Kind ) as TObjectDBRecord;
+  Result.vHeader := lHeader;
+  Result.Load( Stream );
+end;
+
+function TObjectDBRecord.Size: Longint;
+begin
+  Result := Sizeof( TObjectDBRecordHeader );
+end;
+
+procedure TObjectDBRecord.Write(Stream: TStream; Index, Offset, Next, Prev: LongInt);
+var
+  CN : String;
+begin
+  vHeader.Index := Index;
+  vHeader.Offset := Offset;
+  vHeader.Next := Next;
+  vHeader.Prev := Prev;
+  vHeader.Size := self.Size;
+  CN := ClassName;
+  vHeader.Kind := ClassName;
+  Stream.Seek( vHeader.Offset, soBeginning );
+  Stream.Write( vHeader, vHeader.Size );
+end;
+
+{ TObjectDB }
+
+constructor TObjectDB.Create(theFileName : String);
+var
+  IdxFileName : String;
+begin
+  inherited Create( theFileName, fmOpenReadWrite or fmCreate );
+  Header.FirstAvail := SizeOf(Header);
+  Header.FirstRecord := 0;
+  Header.LastRecord := 0;
+  Header.FirstFree  := 0;
+  WriteHeader;
+  IdxFileName := RemoveExt( theFIleName ) + '.idx';
+  vIdx := TBPlusTree.Create( IdxFileName );
+end;
+
+destructor TObjectDB.Destroy;
+begin
+  vIdx.Destroy;
+  inherited Destroy;
+end;
+
+procedure TObjectDB.DumpData(List: TStrings);
+var
+  Rec : TObjectDBRecord;
+  I   : Longint;
+begin
+  I := Header.FirstRecord;
+  while I > 0 do
+    begin
+      Rec := TObjectDBRecord.Read( Self, I );
+      Rec.DumpData( List );
+      I := Rec.Next;
+    end;
+end;
+
+procedure TObjectDB.DumpHeaders(List: TStrings);
+var
+  I : LongInt;
+  Rec : TObjectDBRecord;
+begin
+  List.Add('FirstAvail:  ' + IntToHex( Header.FirstAvail, 8 ) );
+  List.Add('FirstFree:   ' + IntToHex( Header.FirstFree, 8 ) );
+  List.Add('FirstRecord: ' + IntToHex( Header.FirstRecord, 8 ) );
+  List.Add('LastRecord:  ' + IntToHex( Header.LastRecord, 8 ) );
+  List.Add('NextIndex:   ' + IntToHex( Header.NextIndex, 8 ) );
+  Application.ProcessMessages;
+  Rec := TObjectDBRecord.Create;
+  I := Header.FirstRecord;
+  while I > 0 do
+    begin
+      Rec := TObjectDBRecord.Read( Self, I );
+      I := Rec.HexDump( List );
+    end;
+  Rec.Free;
+end;
+
+procedure TObjectDB.HexDump(List: TStrings);
+var
+  I : LongInt;
+  Line : String;
+  Value : Byte;
+begin
+  List.Clear;
+  Line := '';
+  Seek( 0, soBeginning );
+  for I := 0 to pred(Size) do
+    begin
+      if (I mod 16) = 0 then
+        begin
+          if not Empty(Line) then
+            List.Add(Line);
+          Line := IntToHex( I, 8);
+        end;
+      ReadBuffer( Value, Sizeof( Value ) );
+      Line := Line + ' ' + IntToHex( Value, 2 );
+    end;
+  List.Add(Line);
+  vIdx.HexDump(List);
+end;
+
+constructor TObjectDB.Open( theFileName : String );
+var
+  IdxFileName : String;
+begin
+  inherited Create( theFileName, fmOpenReadWrite );
+  ReadHeader;
+  IdxFileName := RemoveExt( theFIleName ) + '.idx';
+  vIdx := TBPlusTree.Open( IdxFileName );
+end;
+
+procedure TObjectDB.ReadHeader;
+begin
+  Seek( 0, soBeginning );
+  ReadBuffer( Header, Sizeof( Header ) );
+end;
+
+procedure TObjectDB.RegisterClass(aClass: TClass);
+var
+  CN : String;
+begin
+  // Restrict the class name to MaxKindLength so we can use
+  // a fixed-length record header
+  CN := aClass.ClassName;
+  if Length(CN) > MaxKindLength then
+    raise Exception.CreateFmt( 'Length of %s (%d) > MaxKindLength (%d)',
+                               [CN,Length(CN),MaxKindLength] );
+  ObjectFactory.RegisterClass( aClass );
+end;
+
+procedure TObjectDB.Remove(Index: LongInt);
+var
+  RecHeader : TObjectDBRecordHeader;
+  OtherHeader : TObjectDBRecordHeader;
+  I         : LongInt;
+begin
+  I := Header.FirstRecord;
+  while I > 0 do
+    begin
+      Seek( I, soBeginning );
+      Read( RecHeader, Sizeof( RecHeader ) );
+      if RecHeader.Index = Index then
+        break;        // Found it
+      I := RecHeader.Next;
+    end;
+  if I > 0 then
+    begin
+      if RecHeader.Prev > 0 then
+        begin
+          Seek( RecHeader.Prev, soBeginning );
+          Read( OtherHeader, SizeOf( OtherHeader ) );
+          OtherHeader.Next := RecHeader.Next;
+          Seek( RecHeader.Prev, soBeginning );
+          Write( OtherHeader, SizeOf( OtherHeader ) );
+        end
+      else
+        begin
+          ReadHeader;
+          Header.FirstRecord := RecHeader.Next;
+          WriteHeader;
+        end;
+      if RecHeader.Next > 0 then
+        begin
+          Seek( RecHeader.Next, soBeginning );
+          Read( OtherHeader, SizeOf( OtherHeader ) );
+          OtherHeader.Prev := RecHeader.Prev;
+          Seek( RecHeader.Next, soBeginning );
+          Write( OtherHeader, SizeOf( OtherHeader ) );
+        end
+      else
+        begin
+          ReadHeader;
+          Header.LastRecord := RecHeader.Prev;
+          WriteHeader;
+        end;
+      // Here we need to add the newly removed area to the
+      // Free List.
+    end;
+end;
+
+procedure TObjectDB.Write(Data: TObjectDBRecord);
+var
+  RecHeader : TObjectDBRecordHeader;
+  Prev      : LongInt;
+begin
+  if Header.LastRecord > 0 then
+    begin
+      Seek( Header.LastRecord, soBeginning );
+      ReadBuffer( RecHeader, Sizeof( TObjectDBRecordHeader ) );
+      RecHeader.Next := Header.FirstAvail;
+      Seek( Header.LastRecord, soBeginning );
+      WriteBuffer( RecHeader, Sizeof( TObjectDBRecordHeader ) );
+    end;
+  Prev := Header.LastRecord;
+  if Header.FirstRecord = 0 then
+    Header.FirstRecord := Header.FirstAvail;
+  Header.LastRecord := Header.FirstAvail;
+  Data.Write( Self, Header.NextIndex, Header.FirstAvail, 0, Prev );
+  vIdx.Insert( Header.NextIndex, Header.FirstAvail );
+  Header.FirstAvail := Size;
+  Inc(Header.NextIndex);
+  WriteHeader;
+end;
+
+procedure TObjectDB.WriteHeader;
+begin
+  Seek( 0, soBeginning );
+  WriteBuffer( Header, Sizeof( Header ) );
+end;
+
+end.
+

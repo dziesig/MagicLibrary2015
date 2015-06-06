@@ -1,0 +1,480 @@
+unit ObjectDBIdx1;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils;
+
+const
+  NodeSize = 4; // 3 for testing only
+  BlockSize = 64; // Should be 4096 in final implementation
+
+type
+
+  TObjectDBIdx = class;      // Forward declaration for TNode
+
+  TIndexError = class( Exception )
+  end;
+
+  TLink = record
+    Idx : LongInt;
+    Pos : LongInt;
+  end;
+
+  TNodeData = record
+    Links : array[0..pred(NodeSize)] of Tlink;
+    NextLink : LongInt;  // for records with Keys > highest key in Links
+    Prev, Next : Longint;
+    Parent : Longint;
+    BlockNum : Longint;
+    NumLinks : Smallint;
+    IsLeaf   : WordBool;
+  end;
+
+  { TNode }
+
+  TNode = class
+    protected
+
+      fIndexFile : TObjectDBIdx;
+
+      function  getPrev : Longint; virtual; abstract;
+      procedure setPrev( Value : LongInt); virtual; abstract;
+      function  getNext : Longint; virtual; abstract;
+      procedure setNext( Value : LongInt); virtual; abstract;
+    public
+
+      Data : TNodeData;
+
+      constructor Create( theIndexFile : TObjectDBIdx; theBlockNum : Longint ); virtual;
+
+      class function Read( theIndexFile : TObjectDBIdx; BlockNum : Longint ) : TNode;
+
+      function  Find( Index : Longint ) : Longint;
+      procedure Insert( Idx, Pos : Longint );
+
+      procedure Write;
+
+      procedure HexDump( List : TStrings );
+
+      property NumLinks : SmallInt read Data.NumLinks write Data.NumLinks;
+      property IsLeaf : WordBool read Data.IsLeaf;
+      property Parent : LongInt read Data.Parent write Data.Parent;
+      property Next   : Longint read getNext write setNext;
+      property Prev   : Longint read getPrev write setPrev;
+  end;
+
+  { TLeafNode }
+
+  TLeafNode = class( TNode )
+    protected
+      function  getPrev : Longint; override;
+      procedure setPrev( Value : LongInt); override;
+      function  getNext : Longint; override;
+      procedure setNext( Value : LongInt); override;
+    public
+      constructor Create(theIndexFile: TObjectDBIdx; theBlockNum : LongInt); override;
+      constructor Create( From : TLeafNode );
+  end;
+
+  { TInternalNode }
+
+  TInternalNode = class( TNode )
+    protected
+      function  getPrev : Longint; override;
+      procedure setPrev( Value : LongInt); override;
+      function  getNext : Longint; override;
+      procedure setNext( Value : LongInt); override;
+    public
+      constructor Create(theIndexFile: TObjectDBIdx; theBlockNum : LongInt); override;
+      constructor Create( From : TInternalNode );
+  end;
+
+  { TObjectDBIdxHeader }
+
+  // Note that this header is stored with the size of a block so that
+  // the remaining blocks are aligned with filesystem blocks for speed.
+  TObjectDBIdxHeader = record
+    Root : Longint; // Position of root (starts at 1.  This Header is at 0)
+    Free : Longint; // Position of first free block( starts at 1.)
+    BlockCount : LongInt;
+  end;
+
+  { TObjectDBIdx }
+
+  TObjectDBIdx = class( TFileStream )
+    private
+      Header : TObjectDBIdxHeader;
+      procedure setBlockCount(AValue: Longint);
+    protected
+
+      procedure HeaderWrite;
+      procedure HeaderRead;
+
+      procedure AddBlock;
+      procedure DelBlock;
+    public
+      constructor Create( theFileName : String );
+      constructor Open( theFileName : String );
+      destructor  Destroy; override;
+
+      procedure Insert( Idx, Offset : LongInt );
+
+      procedure Remove( Idx : LongInt );
+      function  Find( Idx : LongInt ) : LongInt; // Returns offset to data.
+
+      procedure HexDump( List : TStrings );
+
+      property BlockCount : Longint read Header.BlockCount write setBlockCount;
+  end;
+
+
+implementation
+
+uses
+  CommonMath,
+  CommonDebug, StringSubs;   // These units for development and testing only.
+
+{ TNode }
+
+constructor TNode.Create(theIndexFile: TObjectDBIdx; theBlockNum: Longint);
+begin
+  fIndexFile := theIndexFile;
+  Data.BlockNum   := theBlockNum;
+  Data.NumLinks   := 0;
+end;
+
+function TNode.Find(Index: Longint): Longint;
+var
+  I : Word;
+begin
+ //Result := -1;
+  if NumLinks = 0 then // Is the Node empty?
+    Result := 0
+  else
+    begin
+      Result := NumLinks; // In case Index > max Idx;
+    // Temporary till binary search implemented.
+      for I := 0 to pred(NumLinks) do
+        begin
+          if Data.Links[I].Idx = Index then
+            raise TIndexError.CreateFmt( 'Duplicate Index (%d) detected',[Index] );
+          if Data.Links[I].Idx > Index then
+            begin
+              Result := I;
+              break;
+            end;
+        end;
+    end;
+end;
+
+procedure TNode.HexDump(List: TStrings);
+var
+  I : Integer;
+begin
+  if IsLeaf then
+    List.Add('Leaf Node')
+  else
+    List.Add('Internal Node');
+  List.Add('Block:        ' + IntToStr(Data.BlockNum,8,' ') );
+  List.Add('Parent:       ' + IntToHex(Data.Parent, 8 ) );
+  List.Add('NumLinks:     ' + IntToStr(Data.NumLinks,8,' ') );
+  for I := 0 to pred(Data.NumLinks) do
+    List.Add('Link[' + IntToStr(I, 3) + ']:  ' + IntToStr( Data.Links[I].Idx,3,' ' ) + ' -> '
+                                               + IntToStr( Data.Links[I].Pos,3,' ' ) );
+  if IsLeaf then
+    begin
+      List.Add('Prev;         ' + IntToStr(Data.Prev,8,' ') );
+      List.Add('Next;         ' + IntToStr(Data.Next,8,' ') );
+    end
+  else
+    begin
+      List.Add('NextLink:     ' + IntToStr(Data.NextLink,8,' ') );
+    end;
+  List.Add('======================================');
+end;
+
+procedure TNode.Insert(Idx, Pos: Longint);
+var
+  I, L : Longint;
+  Node : TNode;
+  NewRoot : TInternalNode;
+  ParentNode : TInternalNode;
+begin
+  if fIndexFile.BlockCount = 0 then
+    fIndexFile.AddBlock;
+  L := Find( Idx );
+  for I := pred(Data.NumLinks) downto L do
+    Data.Links[I+1] := Data.Links[I];
+  Data.Links[L].Idx := Idx;
+  Data.Links[L].Pos := Pos;
+  Inc(Data.NumLinks);
+  if NumLinks = NodeSize then // Insert then split wastes a little disk space
+    begin                     // but the code is so much simpler.
+       // Add another Node and divide the contents between them;
+      if IsLeaf then
+        Node := TLeafNode.Create( Self as TLeafNode )
+      else
+        Node := TInternalNode.Create( Self as TInternalNode );
+      for I := 0 to pred(NodeSize div 2) do
+        Node.Data.Links[I] := Data.Links[(NodeSize div 2) + I];
+      Node.Data.NumLinks := NodeSize div 2;
+      Self.fIndexFile.AddBlock;
+      Data.NumLinks := NodeSize div 2;
+
+      if Parent = 0 then
+        begin
+          NewRoot := TInternalNode.Create( Self.fIndexFile, Self.fIndexFile.BlockCount );
+          NewRoot.Data.Links[0].Idx := Data.Links[0].Idx;
+          NewRoot.Data.Links[0].Pos := Data.BlockNum;
+          NewRoot.NumLinks := 1;
+          NewRoot.Data.NextLink := Node.Data.BlockNum;
+          NewRoot.Write;
+          Self.fIndexFile.AddBlock;
+          Self.fIndexFile.Header.Root := NewRoot.Data.BlockNum;
+          Self.fIndexFile.HeaderWrite;
+          Node.Parent := NewRoot.Data.BlockNum;
+          Parent      := NewRoot.Data.BlockNum;
+        end
+      else
+        begin
+          ParentNode := TNode.Read( Self.fIndexFile, Parent ) as TInternalNode;
+          ParentNode.Insert( Node.Data.Links[0].Idx, Node.Data.BlockNum );
+          ParentNode.Write;
+        end;
+      Node.Write;
+    end;
+  Write;
+
+end;
+
+class function TNode.Read(theIndexFile: TObjectDBIdx; BlockNum: Longint) : TNode;
+var
+  theData : TNodeData;
+begin
+  theIndexFile.Seek( BlockNum * BlockSize, soBeginning );
+  theIndexFile.Read( theData, Sizeof( TNodeData ) );
+  if theData.IsLeaf then
+    Result := TLeafNode.Create( theIndexFile, BlockNum )
+  else
+    Result := TInternalNode.Create( theIndexFile, BlockNum );
+  Result.Data := theData;
+end;
+
+procedure TNode.Write;
+var
+  theData : TNodeData;
+  Offset  : LongInt;
+begin
+  theData := Data;
+  Offset  := theData.BlockNum * BlockSize;
+  if theData.BlockNum < 1 then
+    raise TIndexError.Create('Atempt to write Node into block 0');
+  fIndexFile.BlockCount := Max( fIndexFile.BlockCount, theData.BlockNum + 1 );
+  fIndexFile.Seek( Offset, soBeginning );
+  fIndexFile.Write( theData, Sizeof( Data ) );
+end;
+
+{ TInternalNode }
+
+function TInternalNode.getNext: Longint;
+begin
+  raise TIndexError.Create('Invalid use of "Next" on internal node.');
+end;
+
+function TInternalNode.getPrev: Longint;
+begin
+  raise TIndexError.Create('Invalid use of "Prev" on internal node.');
+end;
+
+constructor TInternalNode.Create(From: TInternalNode);
+begin
+  From.fIndexFile.AddBlock;
+  Create( From.fIndexFile, From.fIndexFile.BlockCount );
+end;
+
+constructor TInternalNode.Create(theIndexFile: TObjectDBIdx; theBlockNum : LongInt);
+begin
+  inherited;
+  Data.IsLeaf := False;
+end;
+
+procedure TInternalNode.setNext(Value: LongInt);
+begin
+  raise TIndexError.Create('Invalid use of "Next" on internal node.');
+end;
+
+procedure TInternalNode.setPrev(Value: LongInt);
+begin
+  raise TIndexError.Create('Invalid use of "Prev" on internal node.');
+end;
+
+{ TLeafNode }
+
+function TLeafNode.getNext: Longint;
+begin
+  Result := Data.Next;
+end;
+
+function TLeafNode.getPrev: Longint;
+begin
+  Result := Data.Prev;
+end;
+
+constructor TLeafNode.Create(From: TLeafNode);
+begin
+  From.fIndexFile.AddBlock;
+  Create( From.fIndexFile, From.fIndexFile.BlockCount );
+end;
+
+constructor TLeafNode.Create(theIndexFile: TObjectDBIdx; theBlockNum: LongInt);
+begin
+  inherited;
+  Data.IsLeaf := True;
+end;
+
+procedure TLeafNode.setNext(Value: LongInt);
+begin
+  Data.Next := Value;
+end;
+
+procedure TLeafNode.setPrev(Value: LongInt);
+begin
+  Data.Prev := Value;
+end;
+
+
+{ TObjectDBIdx }
+
+procedure TObjectDBIdx.AddBlock;
+begin
+  HeaderRead;
+  Inc( Header.BlockCount );
+  HeaderWrite;
+end;
+
+constructor TObjectDBIdx.Create(theFileName : String);
+begin
+  inherited Create( theFileName, fmOpenReadWrite or fmCreate );
+  Header.Root := 0;
+  Header.Free := 0;
+  HeaderWrite;
+end;
+
+procedure TObjectDBIdx.DelBlock;
+begin
+  HeaderRead;
+  if Header.BlockCount = 0 then
+    raise TIndexError.Create('Index block underflow');
+  Dec(Header.BlockCount);
+  HeaderWrite;
+end;
+
+destructor TObjectDBIdx.Destroy;
+begin
+  inherited Destroy;
+end;
+
+function TObjectDBIdx.Find(Idx: LongInt): LongInt;
+begin
+
+end;
+
+procedure TObjectDBIdx.HeaderRead;
+begin
+  Seek( 0, soBeginning );
+  ReadBuffer( Header, SizeOf( TObjectDBIdxHeader ) );
+end;
+
+procedure TObjectDBIdx.HeaderWrite;
+begin
+  Seek( 0, soBeginning );
+  WriteBuffer( Header, BlockSize );
+end;
+
+procedure TObjectDBIdx.HexDump(List: TStrings);
+var
+  I : LongInt;
+  Line : String;
+  Value : Byte;
+  Node : TNode;
+begin
+  //List.Clear;
+  List.Add('Dump of idx file');
+  Line := '';
+  Seek( 0, soBeginning );
+  for I := 0 to pred(Size) do
+    begin
+      if (I mod 16) = 0 then
+        begin
+          if not Empty(Line) then
+            List.Add(Line);
+          Line := IntToHex( I, 8);
+        end;
+      ReadBuffer( Value, Sizeof( Value ) );
+      Line := Line + ' ' + IntToHex( Value, 2 );
+    end;
+  List.Add(Line);
+  // Dump the header
+  HeaderRead;
+  List.Add('==============================');
+  List.Add('IdxHeader');
+  List.Add('Root:       ' + IntToHex( Header.Root, 8 ) );
+  List.Add('Free:       ' + IntToHex( Header.Free, 8 ) );
+  List.Add('BlockCount: ' + IntToStr( Header.BlockCount ) );
+  List.Add('==============================');
+  for I := 1 to pred(Header.BlockCount) do
+    begin
+      Node := TNode.Read( Self, I );
+      Node.HexDump( List );
+      Node.Free;
+    end;
+
+end;
+
+procedure TObjectDBIdx.Insert(Idx, Offset: LongInt);
+var
+  LeafNode : TLeafNode;
+  Node : TNode;
+begin
+//  Stub('Size of node data:  ' + IntToStr(Sizeof(TNodeData)));
+  HeaderRead;
+  if Header.Root = 0 then // The Index is Empty
+    begin
+      LeafNode := TLeafNode.Create( Self, 1 );
+      LeafNode.Insert( Idx, Offset );
+      LeafNode.Write;
+      LeafNode.Free;
+      Header.Root := 1;
+      HeaderWrite;
+    end
+  else
+    begin
+      Node := TNode.Read( Self, Header.Root );
+      Node.Insert( Idx, Offset );
+    end;
+end;
+
+constructor TObjectDBIdx.Open(theFileName : String);
+begin
+  inherited Create( theFileName, fmOpenReadWrite );
+  HeaderRead;
+end;
+
+
+procedure TObjectDBIdx.Remove(Idx: LongInt);
+begin
+
+end;
+
+procedure TObjectDBIdx.setBlockCount(AValue: Longint);
+begin
+  HeaderRead;
+  Header.BlockCount := AValue;
+  HeaderWrite;
+end;
+
+end.
+

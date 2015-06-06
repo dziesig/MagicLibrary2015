@@ -1,0 +1,55 @@
+unit TestFormPanelUnit2;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
+  ExtCtrls, Buttons;
+
+type
+
+  { TForm2 }
+
+  TForm2 = class(TForm)
+    Button1: TButton;
+    Edit1: TEdit;
+    Edit2: TEdit;
+    GroupBox1: TGroupBox;
+    Label1: TLabel;
+    Label2: TLabel;
+    LabeledEdit1: TLabeledEdit;
+    OpenDialog1: TOpenDialog;
+    procedure BitBtn1Click(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+  private
+    { private declarations }
+  public
+    { public declarations }
+  end;
+
+var
+  Form2: TForm2;
+
+implementation
+
+uses
+  CommonDebug;
+
+{$R *.lfm}
+
+{ TForm2 }
+
+procedure TForm2.BitBtn1Click(Sender: TObject);
+begin
+  Stub('BitBtn1Click');
+end;
+
+procedure TForm2.Button1Click(Sender: TObject);
+begin
+  Stub('Button1Click');
+end;
+
+end.
+

@@ -1,0 +1,205 @@
+unit zzz;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  StdCtrls;
+
+type
+
+  { Tzzz }
+
+  Tzzz = class(TPanel)
+  private
+    fAMPM: Boolean;
+    fOnTimeChange: TNotifyEvent;
+    function GetTime: String;
+    procedure SetAMPM(AValue: Boolean);
+    procedure Settime(AValue: String);
+    { Private declarations }
+  protected
+    { Protected declarations }
+    fColonLabel  : TLabel;
+    fHourCombo   : TComboBox;
+    fMinuteCombo : TComboBox;
+    fAMPMCombo   : TComboBox;
+
+    procedure PopulateHours;
+    procedure PopulateMinutes;
+    procedure PopulateAMPM;
+    procedure ReDraw; // Handles changes in font/ampm, etc.
+    procedure FontChanged( Sender : TObject ); override;
+  public
+    { Public declarations }
+    constructor Create( aOwner : TComponent ); override;
+    destructor  Destroy; override;
+
+  published
+    { Published declarations }
+    property AMPM          : Boolean   read fAMPM      write SetAMPM;
+    property Font;
+    property Time          : String    read GetTime     write Settime;
+
+    property OnTimeChange  : TNotifyEvent read fOnTimeChange write fOnTimeChange;
+  end;
+
+procedure Register;
+
+implementation
+
+uses
+  Types, LazLogger;
+
+procedure Register;
+begin
+  RegisterComponents('Magic',[Tzzz]);
+end;
+
+{ Tzzz }
+
+constructor Tzzz.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  Parent := aOwner as TWinControl;
+  Caption := '';
+  fHourCombo   := TComboBox.Create( self );
+  fHourCombo.Parent   := self;
+  fHourCombo.Style := csDropDownList;
+  fHourCombo.Width := 44;
+  fMinuteCombo := TComboBox.Create( self );
+  fMinuteCombo.Parent   := self;
+  fMinuteCombo.Style := csDropDownList;
+  fMinuteCombo.Width := 44;
+  fMinuteCombo.Left := 50;
+  fAMPMCombo   := TComboBox.Create( self );
+  fAMPMCombo.Parent   := self;
+  fAMPMCombo.Style := csDropDownList;
+  fAMPMCombo.Width := 44;
+  fAMPMCombo.Left := 100;
+
+
+  fColonLabel := TLabel.Create( Self );
+  fColonLabel.Parent := Self;
+  fColonLabel.Caption := ':';
+  fColonLabel.AutoSize := True;
+
+  PopulateHours;
+  PopulateMinutes;
+  PopulateAMPM;
+
+  Font.Name := 'Arial';
+  Font.Size := 10;
+
+  Height := 22;
+end;
+
+destructor Tzzz.Destroy;
+begin
+  inherited Destroy;
+end;
+
+procedure Tzzz.FontChanged(Sender: TObject);
+var
+  Size : TSize;
+begin
+  inherited FontChanged(Sender);
+  DebugLn('FontChanged');
+  DebugLn(DbgS(ComponentState));
+  if not (csDesigning in ComponentState) then exit;
+  if not Assigned(fHourCombo) then
+    begin
+      exit;
+    end;
+  Size := Canvas.TextExtent('00');
+  Height := Size.CY + 8;
+  //DebugLn(DbgS(fHourCombo));
+  //fHourCombo.Font.Assign( Font );
+  //fMinuteCombo.Font.Assign( Font );
+  //fAMPMCombo.Font.Assign( Font );
+  //fHourCombo.Width := Size.CX + 27;
+  //fMinuteCombo.Width := Size.CX + 27;
+  //Size := Canvas.TextExtent('AM');
+  //fAMPMCombo.Width := Size.CX + 27;
+  //fColonLabel.Width := 5;
+  //fColonLabel.Font.Assign( Font );
+  //fColonLabel.Font.Style := [fsBold];
+  //fColonLabel.Caption := ':';
+  //ReDraw;
+end;
+
+function Tzzz.GetTime: String;
+begin
+
+end;
+
+procedure Tzzz.PopulateAMPM;
+begin
+  fAMPMCombo.Clear;
+  fAMPMCombo.Items.Add('AM');
+  fAMPMCombo.Items.Add('PM');
+  fAMPMCombo.ItemIndex := 0;
+end;
+
+procedure Tzzz.PopulateHours;
+var
+  I : Integer;
+begin
+  fHourCombo.Clear;
+  if fAMPM then
+    begin
+      for I := 0 to 11 do
+        begin
+          if I = 0 then
+            fHourCombo.Items.Add('12')
+          else if I < 10 then
+            fHourCombo.Items.Add(' ' + IntToStr(I))
+          else
+            fHourCombo.Items.Add(IntToStr(I));
+        end;
+      fAMPMCombo.Visible := True;
+    end
+  else
+    begin
+      for I := 0 to 23 do
+        if I < 10 then
+          fHourCombo.Items.Add('0' + IntToStr(I))
+        else
+          fHourCombo.Items.Add(IntToStr(I));
+      fAMPMCombo.Visible := False;
+    end;
+  fHourCombo.ItemIndex := 0;
+end;
+
+procedure Tzzz.PopulateMinutes;
+var
+  I : Integer;
+begin
+  fMinuteCombo.Clear;
+  for I := 0 to 59 do
+    if I < 10 then
+      fMInuteCombo.Items.Add('0' + IntToStr(I) )
+    else
+      fMInuteCombo.Items.Add(IntToStr(I));
+  fMinuteCombo.ItemIndex := 0;
+end;
+
+procedure Tzzz.ReDraw;
+begin
+
+end;
+
+procedure Tzzz.SetAMPM(AValue: Boolean);
+begin
+  if fAMPM=AValue then Exit;
+  fAMPM:=AValue;
+end;
+
+procedure Tzzz.Settime(AValue: String);
+begin
+
+end;
+
+end.

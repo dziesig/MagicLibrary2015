@@ -1,0 +1,219 @@
+unit MagicStringGrid;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, Grids;
+
+type
+
+  { TMagicStringGrid }
+
+  TMagicStringGrid = class(TStringGrid)
+  private
+    fOnMagicSelectCell: TOnSelectCellEvent;
+    fOnMagicSelection: TOnSelectEvent;
+    function GetRowCount: Integer;
+    function GetSelection: TGridRect;
+    procedure SetRowCount(AValue: Integer);
+    procedure SetSelection(AValue: TGridRect);
+    { Private declarations }
+  protected
+    { Protected declarations }
+    NoFireEvent : Boolean;
+    procedure DoSelectCell(Sender: TObject; aCol, aRow: Integer; var CanSelect : Boolean);
+    procedure DoSelection(Sender: TObject; aCol, aRow: Integer);
+  public
+    { Public declarations }
+    constructor Create( aOwner : TComponent ); override;
+
+    property Selection : TGridRect read GetSelection write SetSelection;
+  published
+    { Published declarations }
+    property Align;
+    property AlternateColor;
+    property Anchors;
+    property AutoAdvance;
+    property AutoEdit;
+    property AutoFillColumns;
+    property BorderSpacing;
+    property BorderStyle;
+    property CellHintPriority;
+    property ColCount;
+    property Color;
+    property ColumnClickSorts;
+    property Columns;
+    property Constraints;
+    property Cursor;
+    property DefaultColWidth;
+    property DefaultDrawing;
+    property DefaultRowHeight;
+    property DragCursor;
+    property DragKind;
+    property DragMode;
+    property Enabled;
+    property ExtendedSelect;
+    property FixedColor;
+    property FixedCols;
+    property FixedRows;
+    property Flat;
+    property Font;
+    property GridLineWidth;
+    property HeaderHotZones;
+    property HeaderPushZones;
+    property Height;
+    property HelpContext;
+    property HelpKeyword;
+    property HelpType;
+    property Hint;
+    property Left;
+    property MouseWheelOption;
+    property Name;
+    property Options;
+    property ParentColor;
+    property ParentFont;
+    property ParentShowHint;
+    property PopupMenu;
+    property RangeSelectMode;
+    property RowCount         : Integer read GetRowCount write SetRowCount;
+    property ScrollBars;
+    property ShowHint;
+    property TabAdvance;
+    property TabOrder;
+    property TabStop;
+    property Tag;
+    property TitleFont;
+    property TitleImageList;
+    property TitleStyle;
+    property Top;
+    property UseXORFeatures;
+    property Visible;
+    property VisibleColCount;
+    property VisibleRowCount;
+    property Width;
+
+    property OnBeforeSelection;
+    property OnButtonClick;
+    property OnChangeBounds;
+    property OnCheckBoxToggled;
+    property OnClick;
+    property OnColRowDeleted;
+    property OnColRowExchanged;
+    property OnColRowInserted;
+    property onColRowMoved;
+    property OnCompareCells;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnDragDrop;
+    property OnDragOver;
+    property OnDrawCell;
+    property OnEditButtonClick;
+    property OnEditingDone;
+    property OnEndDock;
+    property OnEndDrag;
+    property OnEnter;
+    property OnExit;
+    property OnGetCellHint;
+    property OnGetCheckboxState;
+    property OnGetEditMask;
+    property OnGetEditText;
+    property OnHeaderClick;
+    property onHeaderSized;
+    property OnHeaderSizing;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnMouseWheel;
+    property OnMouseWheelDown;
+    property OnMouseWheelUp;
+    property OnPickListSelect;
+    property OnPrepareCanvas;
+    property OnResize;
+    property OnMagicSelectCell    : TOnSelectCellEvent read fOnMagicSelectCell write fOnMagicSelectCell;
+    property OnSelectEditor;
+    property OnMagicSelection     : TOnSelectEvent read fOnMagicSelection write fOnMagicSelection;
+    property OnSetCheckboxState;
+    property OnSetEditText;
+    property OnShowHint;
+    property OnStartDock;
+    property OnStartDrag;
+    property OnTopLeftChanged;
+    property OnUserCheckboxBitmap;
+    property onUTF8KeyPress;
+    property OnValidateEntry; ///
+  end;
+
+procedure Register;
+
+implementation
+
+procedure Register;
+begin
+  {$I magicstringgrid_icon.lrs}
+  RegisterComponents('Magic',[TMagicStringGrid]);
+end;
+
+{ TMagicStringGrid }
+
+constructor TMagicStringGrid.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  NoFireEvent := False;
+  OnSelectCell := @DoSelectCell;
+  OnSelection  := @DoSelection;
+end;
+
+procedure TMagicStringGrid.DoSelectCell(Sender: TObject; aCol, aRow: Integer;
+  var CanSelect: Boolean);
+begin
+  if NoFireEvent then Exit;
+  if Assigned( fOnMagicSelectCell ) then
+    fOnMagicSelectCell( Sender, aCol, aRow, CanSelect );
+end;
+
+procedure TMagicStringGrid.DoSelection(Sender: TObject; aCol, aRow: Integer);
+begin
+  if NoFireEvent then Exit;
+  if Assigned( fOnMagicSelection ) then
+    fOnMagicSelection( Sender, aCol, aRow );
+end;
+
+function TMagicStringGrid.GetRowCount: Integer;
+begin
+  Result := inherited RowCount;
+end;
+
+function TMagicStringGrid.GetSelection: TGridRect;
+begin
+  Result := inherited Selection;
+end;
+
+procedure TMagicStringGrid.SetRowCount(AValue: Integer);
+begin
+  NoFireEvent := True;
+  try
+    inherited RowCount := AValue;
+  finally
+    NoFireEvent := False;
+  end;
+end;
+
+procedure TMagicStringGrid.SetSelection(AValue: TGridRect);
+begin
+  NoFireEvent := True;
+  try
+    inherited Selection := AValue;
+  finally
+    NoFireEvent := False;
+  end;
+end;
+
+
+end.

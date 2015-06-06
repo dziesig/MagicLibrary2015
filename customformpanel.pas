@@ -1,0 +1,66 @@
+unit CustomFormPanel;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, ExtCtrls;
+
+type
+  TFormPanelCentering = (fpcNone, fpcHoriz, fpcVert, fpcBoth);
+
+  { TCustomFormPanel }
+
+  TCustomFormPanel = class(TCustomPanel)
+  private
+    fCentering: TFormPanelCentering;
+    procedure SetCentering(AValue: TFormPanelCentering);
+    { Private declarations }
+  protected
+    { Protected declarations }
+    InnerPanel : TPanel;
+  public
+    { Public declarations }
+    constructor Create( aOwner : TComponent ); override;
+  published
+    { Published declarations }
+    property Centering : TFormPanelCentering read fCentering write SetCentering;
+  end;
+
+  TFormPanel = class(TCustomFormPanel)
+
+  public
+
+  published
+    { Published declarations }
+    property Anchors;
+    property Centering : TFormPanelCentering;
+
+  end;
+
+procedure Register;
+
+implementation
+
+procedure Register;
+begin
+  {$I formpanel_icon.lrs}
+  RegisterComponents('Magic',[TFormPanel]);
+end;
+
+{ TCustomFormPanel }
+
+constructor TCustomFormPanel.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  fCentering := fpcNone;
+end;
+
+procedure TCustomFormPanel.SetCentering(AValue: TFormPanelCentering);
+begin
+  if fCentering=AValue then Exit;
+  fCentering:=AValue;
+end;
+
+end.

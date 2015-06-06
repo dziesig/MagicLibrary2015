@@ -1,0 +1,133 @@
+unit TestMagicStringGridunit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
+  MagicStringGrid, Grids;
+
+type
+
+  { TForm1 }
+
+
+  { TForm1 }
+
+  TForm1 = class(TForm)
+    Button1: TButton;
+    Button2: TButton;
+    Label1: TLabel;
+    Label10: TLabel;
+    Label11: TLabel;
+    Label12: TLabel;
+    Label2: TLabel;
+    Label3: TLabel;
+    Label4: TLabel;
+    Label5: TLabel;
+    Label6: TLabel;
+    Label7: TLabel;
+    Label8: TLabel;
+    Label9: TLabel;
+    MagicStringGrid1: TMagicStringGrid;
+    StringGrid1: TStringGrid;
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure SGDrawCell(Sender: TObject; aCol, aRow: Integer;
+      aRect: TRect; aState: TGridDrawState);
+    procedure MagicStringGrid1MagicSelectCell(Sender: TObject; aCol,
+      aRow: Integer);
+    procedure SGMagicSelection(Sender: TObject; aCol,
+      aRow: Integer);
+    procedure StringGrid1SelectCell(Sender: TObject; aCol, aRow: Integer;
+      var CanSelect: Boolean);
+    procedure StringGrid1Selection(Sender: TObject; aCol, aRow: Integer);
+  private
+    { private declarations }
+  public
+    { public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+uses
+  CommonDebug;
+
+{$R *.lfm}
+
+{ TForm1 }
+
+procedure TForm1.Button1Click(Sender: TObject);
+var
+  Row : Integer;
+  R   : TGridRect;
+begin
+  Row := SG.RowCount;
+  SG.RowCount := Row + 1;
+  R.Left := 0;
+  R.Right := 0;
+  R.Top := Row;
+  R.Bottom := Row;
+  SG.Selection := R;
+  SG.SetFocus;
+end;
+
+procedure TForm1.Button2Click(Sender: TObject);
+begin
+  SG.ExchangeColRow(False,1, 2);
+end;
+
+procedure TForm1.SGDrawCell(Sender: TObject; aCol, aRow: Integer;
+  aRect: TRect; aState: TGridDrawState);
+begin
+  with SG.Canvas.Brush do
+    begin
+      Color := clYellow;
+      if gdSelected      in aState then Color := clRed;
+      if gdFocused       in aState then Color := clLime;
+      if gdFixed         in aState then Color := clSilver;
+      if gdRowHighlight  in aState then Color := clBlue;
+    end;
+  with SG.Canvas do
+    begin
+      //FillRect(aRect);
+      //TextRect(aRect,0,0,SG.Cells[aCol,aRow]);
+
+    end;
+end;
+
+procedure TForm1.MagicStringGrid1MagicSelectCell(Sender: TObject; aCol,
+  aRow: Integer);
+begin
+  Label1.Caption := IntToStr(aCol);
+  Label2.Caption := IntToStr(aRow);
+end;
+
+procedure TForm1.SGMagicSelection(Sender: TObject; aCol,
+  aRow: Integer);
+begin
+  //Stub('Selection ' + IntToStr(aCol) + ' ' + IntToStr( aRow ));
+  Label3.Caption := IntToStr(aCol);
+  Label4.Caption := IntToStr(aRow);
+end;
+
+procedure TForm1.StringGrid1SelectCell(Sender: TObject; aCol, aRow: Integer;
+  var CanSelect: Boolean);
+begin
+  Label11.Caption := IntToStr(aCol);
+  Label12.Caption := IntToStr(aRow);
+
+end;
+
+procedure TForm1.StringGrid1Selection(Sender: TObject; aCol, aRow: Integer);
+begin
+  Label7.Caption := IntToStr(aCol);
+  Label8.Caption := IntToStr(aRow);
+end;
+
+end.
+

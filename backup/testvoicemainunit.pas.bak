@@ -1,0 +1,63 @@
+unit TestVoiceMainUnit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
+  VoiceUnit;
+
+type
+
+  { TForm1 }
+
+  TForm1 = class(TForm)
+    Button1: TButton;
+    Button2: TButton;
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+  private
+    { private declarations }
+    VoiceQueue : TVoiceQueue;
+  public
+    { public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+uses
+  VoiceForm;
+
+{$R *.lfm}
+
+{ TForm1 }
+
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  if not Assigned(VoicePreferencesForm) then
+    VoicePreferencesForm := TVoicePreferencesForm.Create(self);
+  VoicePreferencesForm.Show;
+  //VoiceQueue.OneLiner('Crew Call for train 9 20');
+  //VoiceQueue.OneLiner('Crew call for train 71');
+  //VoiceQueue.OneLiner('New orders for train 1');
+end;
+
+procedure TForm1.Button2Click(Sender: TObject);
+begin
+  VoiceQueue.Say('Crew Call for train 9 20');
+  VoiceQueue.Say('Crew call for train 71');
+  VoiceQueue.Say('New orders for train 1');
+end;
+
+procedure TForm1.FormCreate(Sender: TObject);
+begin
+  VoiceQueue := TVoiceQueue.Create;
+end;
+
+end.
+

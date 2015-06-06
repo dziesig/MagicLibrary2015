@@ -1,0 +1,143 @@
+object Form1: TForm1
+  Left = 353
+  Height = 435
+  Top = 179
+  Width = 784
+  Caption = 'Form1'
+  ClientHeight = 435
+  ClientWidth = 784
+  Position = poScreenCenter
+  LCLVersion = '1.4.0.3'
+  object Button1: TButton
+    Left = 32
+    Height = 25
+    Top = 18
+    Width = 102
+    Caption = 'Add Row'
+    OnClick = Button1Click
+    TabOrder = 0
+  end
+  object Button2: TButton
+    Left = 32
+    Height = 25
+    Top = 64
+    Width = 102
+    Caption = 'Exchange Rows'
+    OnClick = Button2Click
+    TabOrder = 1
+  end
+  object Label1: TLabel
+    Left = 408
+    Height = 13
+    Top = 48
+    Width = 31
+    Caption = 'Label1'
+    ParentColor = False
+  end
+  object Label2: TLabel
+    Left = 408
+    Height = 13
+    Top = 80
+    Width = 31
+    Caption = 'Label2'
+    ParentColor = False
+  end
+  object Label3: TLabel
+    Left = 208
+    Height = 13
+    Top = 48
+    Width = 31
+    Caption = 'Label3'
+    ParentColor = False
+  end
+  object Label4: TLabel
+    Left = 208
+    Height = 13
+    Top = 80
+    Width = 31
+    Caption = 'Label4'
+    ParentColor = False
+  end
+  object Label5: TLabel
+    Left = 208
+    Height = 13
+    Top = 18
+    Width = 43
+    Caption = 'Selection'
+    ParentColor = False
+  end
+  object Label6: TLabel
+    Left = 408
+    Height = 13
+    Top = 18
+    Width = 46
+    Caption = 'SelectCell'
+    ParentColor = False
+  end
+  object StringGrid1: TStringGrid
+    Left = 320
+    Height = 208
+    Top = 128
+    Width = 256
+    TabOrder = 2
+    OnSelection = StringGrid1Selection
+    OnSelectCell = StringGrid1SelectCell
+  end
+  object Label7: TLabel
+    Left = 648
+    Height = 13
+    Top = 142
+    Width = 31
+    Caption = 'Label7'
+    ParentColor = False
+  end
+  object Label8: TLabel
+    Left = 648
+    Height = 13
+    Top = 179
+    Width = 31
+    Caption = 'Label8'
+    ParentColor = False
+  end
+  object Label9: TLabel
+    Left = 648
+    Height = 13
+    Top = 112
+    Width = 43
+    Caption = 'Selection'
+    ParentColor = False
+  end
+  object Label10: TLabel
+    Left = 648
+    Height = 13
+    Top = 224
+    Width = 46
+    Caption = 'SelectCell'
+    ParentColor = False
+  end
+  object Label11: TLabel
+    Left = 648
+    Height = 13
+    Top = 264
+    Width = 37
+    Caption = 'Label11'
+    ParentColor = False
+  end
+  object Label12: TLabel
+    Left = 648
+    Height = 13
+    Top = 301
+    Width = 37
+    Caption = 'Label12'
+    ParentColor = False
+  end
+  object MagicStringGrid1: TMagicStringGrid
+    Left = 32
+    Height = 204
+    Top = 128
+    Width = 264
+    TabOrder = 3
+    OnMagicSelectCell = MagicStringGrid1MagicSelectCell
+    OnMagicSelection = SGMagicSelection
+  end
+end

@@ -1,0 +1,193 @@
+//Copyright (c) 2012 by Donald R. Ziesig
+//
+//Donald.at.Ziesig.org
+//
+//This file is part of MagicLibrary.
+//
+//MagicLibrary is free software: you can redistribute it and/or modify
+//it under the terms of the GNU General Public License as published by
+//the Free Software Foundation, either version 3 of the License, or
+//(at your option) any later version.
+//
+//MagicLibrary is distributed in the hope that it will be useful,
+//but WITHOUT ANY WARRANTY; without even the implied warranty of
+//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//GNU General Public License for more details.
+//
+//You should have received a copy of the GNU General Public License
+//along with MagicLibrary.  If not, see <http://www.gnu.org/licenses/>.
+
+unit VoiceUnit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, SyncObjs;
+
+type
+  TVoice = 0..13;
+  TSpeed = 0..10;
+
+  { TVoiceQueue }
+
+  TVoiceQueue = class(TThread)
+  private
+    fVoice : TVoice;
+    fSpeed : TSpeed;
+    VoiceStr : String;
+    SpeedStr : String;
+    VoiceFIFO : TStringList;
+    mEvent : TEventObject;
+    CriticalSection : TCriticalSection;
+    AllDone : Boolean;
+    procedure SetSpeed(AValue: TSpeed);
+    procedure SetVoice(AValue: TVoice);
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    destructor  Destroy; override;
+
+    procedure Terminate;
+
+    procedure OneLiner( What : String ); // Atomic Process
+
+    procedure Say( What : String );  // Queued
+
+    property Voice : TVoice read fVoice write SetVoice;
+    property Speed : TSpeed read fSpeed write SetSpeed;
+  end;
+
+implementation
+
+uses
+  CommonApp, CommonDebug,
+  StringSubs,
+  Process, forms;
+
+const
+  VoiceCount = 13;
+  VoiceCodes : Array[0..pred(VoiceCount)] of String =
+    ('m1','m2','m3','m4','m5','m6','m7','m8','m9','f1','f2','f3','f4');
+
+{ TVoiceQueue }
+
+constructor TVoiceQueue.Create;
+begin
+  inherited Create(False);
+  mEvent := TEventObject.Create( nil, true, false, '');
+  VoiceFIFO := TStringList.Create;
+  CriticalSection := TCriticalSection.Create;
+  Voice := 0;
+  Speed := 5;
+  AllDone := False; // Hack
+end;
+
+destructor TVoiceQueue.Destroy;
+begin
+  Terminate;
+  mEvent.SetEvent;
+  while not AllDone do Application.ProcessMessages;
+  mEvent.Free;
+  VoiceFIFO.Free;
+  CriticalSection.Free;
+  inherited Destroy;
+end;
+
+procedure TVoiceQueue.Execute;
+var
+  Top : Integer;
+  S   : String;
+  function HasStrings : Boolean;
+  begin
+    CriticalSection.Enter;
+    try
+      Result := VoiceFIFO.Count > 0;
+    finally
+      CriticalSection.Leave;
+    end;
+  end;
+
+begin
+  try
+    repeat
+      mEvent.WaitFor(INFINITE);
+      mEvent.ResetEvent;
+      while HasStrings do
+        begin
+          CriticalSection.Enter;
+          try
+            Top := VoiceFIFO.Count - 1;
+            S := VoiceFIFO[Top];
+            VoiceFIFO.Delete(Top);
+          finally
+            CriticalSection.Leave;
+          end;
+          OneLiner(S);
+        end;
+    until Terminated;
+  // This is a hack to keep TVoiceQueue from hanging the system on exit
+  // because it left the mEvent.WaitFor waiting for something that will never
+  // happen and the program won't exit till it does.
+  finally
+    AllDone := True;;
+  end;
+end;
+
+procedure TVoiceQueue.OneLiner(What: String);
+var
+  Process : TProcess;
+  Path : String;
+begin
+  Process := TProcess.Create(nil);
+  try
+    Path := ExeName;
+    Path := ExtractFilePath(ExeName) + 'eSpeak.exe';
+    Process.Executable := Path;
+    Process.Parameters.Add('-s');
+    Process.Parameters.Add(SpeedStr);
+    Process.Parameters.Add('-v');
+    Process.Parameters.Add(VoiceStr);
+    Process.Parameters.Add(What);
+    Process.Options := [poWaitOnExit, poNoConsole];
+    Process.Execute;
+  finally
+    Process.Free;
+  end;
+end;
+
+procedure TVoiceQueue.Say(What: String);
+begin
+  CriticalSection.Enter;
+  try
+    VoiceFifo.Insert(0,What);
+  finally
+    CriticalSection.Leave;
+  end;
+  mEvent.SetEvent;
+end;
+
+procedure TVoiceQueue.SetSpeed(AValue: TSpeed);
+begin
+  if fSpeed=AValue then Exit;
+  fSpeed:=AValue;
+  SpeedStr := IntToStr(80 + (95 div 5)*AValue);
+end;
+
+procedure TVoiceQueue.SetVoice(AValue: TVoice);
+begin
+  //if fVoice=AValue then Exit;
+  fVoice:=AValue;
+  VoiceStr := VoiceCodes[AValue]
+end;
+
+procedure TVoiceQueue.Terminate;
+begin
+  mEvent.SetEvent;
+  inherited Terminate;
+end;
+
+end.
+

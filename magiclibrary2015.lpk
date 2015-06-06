@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="4">
+    <Name Value="MagicLibrary2015"/>
+    <Type Value="RunAndDesignTime"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <SearchPaths>
+        <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <Files Count="25">
+      <Item1>
+        <Filename Value="magicmainformbase1.lfm"/>
+        <Type Value="LFM"/>
+      </Item1>
+      <Item2>
+        <Filename Value="magicframeform.pas"/>
+        <UnitName Value="MagicFrameForm"/>
+      </Item2>
+      <Item3>
+        <Filename Value="magicformframe1.lfm"/>
+        <Type Value="LFM"/>
+      </Item3>
+      <Item4>
+        <Filename Value="voiceform.lfm"/>
+        <Type Value="LFM"/>
+      </Item4>
+      <Item5>
+        <Filename Value="voiceform.pas"/>
+        <UnitName Value="VoiceForm"/>
+      </Item5>
+      <Item6>
+        <Filename Value="aboutbase.lfm"/>
+        <Type Value="LFM"/>
+      </Item6>
+      <Item7>
+        <Filename Value="commonapp.pas"/>
+        <UnitName Value="CommonApp"/>
+      </Item7>
+      <Item8>
+        <Filename Value="commonmath.pas"/>
+        <UnitName Value="CommonMath"/>
+      </Item8>
+      <Item9>
+        <Filename Value="magicmainformbase1.pas"/>
+        <UnitName Value="magicmainformbase1"/>
+      </Item9>
+      <Item10>
+        <Filename Value="objectfactory1.pas"/>
+        <UnitName Value="ObjectFactory1"/>
+      </Item10>
+      <Item11>
+        <Filename Value="commonio.pas"/>
+        <UnitName Value="CommonIO"/>
+      </Item11>
+      <Item12>
+        <Filename Value="aboutbase.pas"/>
+        <UnitName Value="AboutBase"/>
+      </Item12>
+      <Item13>
+        <Filename Value="commonini.pas"/>
+        <UnitName Value="CommonIni"/>
+      </Item13>
+      <Item14>
+        <Filename Value="voiceform.lfm"/>
+        <Type Value="LFM"/>
+      </Item14>
+      <Item15>
+        <Filename Value="magicformframe1.pas"/>
+        <UnitName Value="MagicFormFrame1"/>
+      </Item15>
+      <Item16>
+        <Filename Value="stringsubs.pas"/>
+        <UnitName Value="StringSubs"/>
+      </Item16>
+      <Item17>
+        <Filename Value="commoncs.pas"/>
+        <UnitName Value="CommonCS"/>
+      </Item17>
+      <Item18>
+        <Filename Value="persists2.pas"/>
+        <UnitName Value="Persists2"/>
+      </Item18>
+      <Item19>
+        <Filename Value="textio2.pas"/>
+        <UnitName Value="textio2"/>
+      </Item19>
+      <Item20>
+        <Filename Value="commonstacks.pas"/>
+        <UnitName Value="CommonStacks"/>
+      </Item20>
+      <Item21>
+        <Filename Value="commondebug.pas"/>
+        <UnitName Value="CommonDebug"/>
+      </Item21>
+      <Item22>
+        <Filename Value="commonmesssages.pas"/>
+        <UnitName Value="CommonMesssages"/>
+      </Item22>
+      <Item23>
+        <Filename Value="commonmisc.pas"/>
+        <UnitName Value="CommonMisc"/>
+      </Item23>
+      <Item24>
+        <Filename Value="commonlog.pas"/>
+        <UnitName Value="CommonLog"/>
+      </Item24>
+      <Item25>
+        <Filename Value="voiceunit.pas"/>
+        <UnitName Value="VoiceUnit"/>
+      </Item25>
+    </Files>
+    <RequiredPkgs Count="2">
+      <Item1>
+        <PackageName Value="LCL"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="FCL"/>
+      </Item2>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+    <CustomOptions Items="ExternHelp" Version="2">
+      <_ExternHelp Items="Count"/>
+    </CustomOptions>
+  </Package>
+</CONFIG>

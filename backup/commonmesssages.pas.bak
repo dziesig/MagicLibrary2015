@@ -1,0 +1,25 @@
+unit CommonMesssages;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils;
+
+function SaveModified( Doing, What : String ) : Integer;
+
+implementation
+
+uses
+  Dialogs;
+
+function SaveModified( Doing, What : String ) : Integer;
+begin
+  Result := MessageDlg( What + ' has been modified.'#13#10 +
+                     'Do you want to save it before ' + Doing + ' a new one?',
+                     mtConfirmation, [mbYes, mbNo, mbCancel], 0);
+end;
+
+end.
+

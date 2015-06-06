@@ -1,0 +1,380 @@
+unit RRClock;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  StdCtrls;
+
+type
+
+  TPosition = ( cpLeft, cpCenter, cpRight );
+
+  TOption = ( rrcHideCalendar, rrcHideClock );
+  TOptions = set of TOption;
+
+  THeartBeatEvent = procedure( Sender : TObject; out Time : TDateTime ) of object;
+
+  { TRRClock }
+
+  TRRClock = class(TCustomPanel)
+  { Private declarations }
+  private
+    fAMPM: Boolean;
+    fCalendarFormat: String;
+    fCalendarPosition: TPosition;
+    fClockPosition: TPosition;
+    fColorStopped: TColor;
+    fColorStoppedText: TColor;
+    fColorText: TColor;
+    fDateTime: TDateTime;
+    fMarginsLR: Integer;
+    fOnHeartBeat: THeartBeatEvent;
+    fOptions: TOptions;
+    fRunning: Boolean;
+    fSpeedMultiplier: Word;
+    fSpeedVernir: Double;
+
+    procedure SetAMPM(AValue: Boolean);
+    procedure SetCalendarFormat(AValue: String);
+    procedure SetCalendarPosition(AValue: TPosition);
+    procedure SetClockPosition(AValue: TPosition);
+    procedure SetColorStopped(AValue: TColor);
+    procedure SetColorStoppedText(AValue: TColor);
+    procedure SetColorText(AValue: TColor);
+    procedure SetDateTime(AValue: TDateTime);
+    procedure SetMarginsLR(AValue: Integer);
+    procedure SetOptions(AValue: TOptions);
+    procedure SetRunning(AValue: Boolean);
+    procedure SetSpeedMultiplier(AValue: Word);
+    procedure SetSpeedVernir(AValue: Double);
+
+
+  { Protected declarations }
+  protected
+    vCalendarTop  : Integer;
+    vCalendarLeft : Integer;
+    vClockTop     : Integer;
+    vClockLeft    : Integer;
+    vLastFontSize : Integer;
+    vHideColon    : Boolean;
+
+    vOneMinute    : TDateTime;
+
+    vColonTimer   : TTimer;
+    vRRTimer      : TTimer;
+
+    vDate         : Integer;
+
+    procedure SetElementPositions;
+
+    procedure Paint; override;
+    procedure SizeChanged( Sender : TObject );
+    procedure ToggleColon( Sender : TObject );
+    procedure IncrementMinutes( Sender : TObject );
+
+    function TimeStr( theTime : TDateTime; HideColon : Boolean = False ) : String;
+
+  { Public declarations }
+  public
+    constructor Create(theOwner: TComponent); override;
+
+    //property Caption : String read FCaption write SetCaption;
+  published
+    { Published declarations }
+    property Align;
+    property AMPM : Boolean read fAMPM write SetAMPM;
+    property CalendarFormat   : String    read fCalendarFormat   write SetCalendarFormat;
+    property CalendarPosition : TPosition read fCalendarPosition write SetCalendarPosition;
+    property Caption;
+    property ClockPosition : TPosition read fClockPosition write SetClockPosition;
+    property Color; // Clock Running Background
+    property ColorStopped     : TColor read fColorStopped     write SetColorStopped default clRed;
+    property ColorText        : TColor read fColorText        write SetColorText; // Clock Running Font Color
+    property ColorStoppedText : TColor read fColorStoppedText write SetColorStoppedText default clWhite;
+    property DateTime         : TDateTime read fDateTime      write SetDateTime;
+    property Font;
+    property MarginsLR        : Integer read fMarginsLR       write SetMarginsLR;
+    property Options          : TOptions read fOptions        write SetOptions;
+    property Running          : Boolean read fRunning         write SetRunning;
+    property SpeedMultiplier  : Word    read fSpeedMultiplier write SetSpeedMultiplier;
+    property SpeedVernir      : Double  read fSpeedVernir     write SetSpeedVernir;
+
+    property OnHeartBeat      : THeartBeatEvent read fOnHeartBeat write fOnHeartBeat;
+  end;
+
+procedure Register;
+
+implementation
+
+uses
+  StringSubs, Types;
+
+procedure Register;
+begin
+  {$I rrclock_icon.lrs}
+  RegisterComponents('Railroad',[TRRClock]);
+end;
+
+{ TRRClock }
+
+constructor TRRClock.Create(theOwner: TComponent);
+begin
+  inherited Create(theOwner);
+  vOneMinute := EncodeTime( 0, 1, 0, 0 );
+  OnResize:=@SizeChanged;
+  fColorStopped := clRed;
+  fColorStoppedText := clWhite;
+  fCalendarFormat := 'mmmm d, yyyy';
+  Font.Size := 20;
+  fMarginsLR := 10;
+  fClockPosition := cpRight;
+  Width := 420;
+  Color := clLime;
+  vHideColon := False;
+  vColonTimer := TTimer.Create( Self );
+  vColonTimer.OnTimer := @ToggleColon;
+  vColonTimer.Interval := 500;
+  vColonTimer.Enabled := False;
+  fSpeedMultiplier := 1;
+  vDate := -1;
+  vRRTimer := TTimer.Create( Self );
+  vRRTimer.OnTimer := @IncrementMinutes;
+  vRRTimer.Interval := 60000;  // 1 Minute at 1:1
+  vRRTimer.Enabled := False;
+  RePaint;
+end;
+
+procedure TRRClock.IncrementMinutes(Sender: TObject);
+begin
+  fDateTime := fDateTime + vOneMinute;
+  RePaint;
+  if Assigned( fOnHeartBeat ) then
+    fOnHeartBeat( Self, fDateTime );
+end;
+
+procedure TRRClock.Paint;
+var
+  CR : TRect; // The Clipping Rectangle
+begin
+  //inherited Paint;
+  if Canvas.Font.Size <> vLastFontSize then
+    begin
+      vLastFontSize := Canvas.Font.Size;
+      SetElementPositions;
+    end;
+  CR := Canvas.ClipRect;
+  // Set the Background and Text Colors f(Running)
+  with Canvas do
+    if fRunning then
+      begin
+        Font.Color := fColorText;
+        Brush.Color := Color;
+      end
+    else
+      begin
+        Font.Color := fColorStoppedText;
+        Brush.Color := ColorStopped;
+      end;
+
+  Canvas.Pen.Color := clGray;
+  Canvas.FillRect(0,0,CR.Right,CR.Bottom);
+  Canvas.Frame( CR );
+  // Draw the clock if not hidden
+  if not (rrcHideClock in fOptions) then
+    Canvas.TextOut(vClockLeft,vClockTop,TimeStr(fDateTime, vHideColon));
+  // Draw the calendar date if not hidden
+  if not (rrcHideCalendar in fOptions) then
+    Canvas.TextOut(vCalendarLeft,vCalendarTop,FormatDateTime(fCalendarFormat,fDateTime));
+
+end;
+
+procedure TRRClock.SetAMPM(AValue: Boolean);
+begin
+  if fAMPM=AValue then Exit;
+  fAMPM:=AValue;
+  SetElementPositions;
+  RePaint;
+end;
+
+procedure TRRClock.SetCalendarFormat(AValue: String);
+begin
+  if fCalendarFormat=AValue then Exit;
+  fCalendarFormat:=AValue;
+  SetElementPositions;
+  RePaint;
+end;
+
+procedure TRRClock.SetCalendarPosition(AValue: TPosition);
+begin
+  if fCalendarPosition=AValue then Exit;
+  fCalendarPosition:=AValue;
+  SetElementPositions;
+  RePaint;
+end;
+
+procedure TRRClock.SetClockPosition(AValue: TPosition);
+begin
+  if fClockPosition=AValue then Exit;
+  fClockPosition:=AValue;
+  SetElementPositions;
+  RePaint;
+end;
+
+procedure TRRClock.SetColorStopped(AValue: TColor);
+begin
+  if fColorStopped=AValue then Exit;
+  fColorStopped:=AValue;
+  RePaint;
+end;
+
+procedure TRRClock.SetColorStoppedText(AValue: TColor);
+begin
+  if fColorStoppedText=AValue then Exit;
+  fColorStoppedText:=AValue;
+  RePaint;
+end;
+
+procedure TRRClock.SetColorText(AValue: TColor);
+begin
+  if fColorText=AValue then Exit;
+  fColorText:=AValue;
+  RePaint;
+end;
+
+procedure TRRClock.SetDateTime(AValue: TDateTime);
+begin
+  if fDateTime=AValue then Exit;
+  fDateTime:=AValue;
+  RePaint;
+end;
+
+procedure TRRClock.SetElementPositions;
+var
+  TextExtents : TSize;
+
+  function Center( Size, Extent : Integer ) : Integer;
+  begin
+    Result := ( Extent - Size ) div 2;
+  end;
+
+begin
+  TextExtents := Canvas.TextExtent(TimeStr(fDateTime, vHideColon));
+  case fClockPosition of
+    cpLeft :
+      vClockLeft := fMarginsLR;
+    cpCenter :
+      vClockLeft := Center( TextExtents.cx, Width );
+    cpRight :
+      vClockLeft := Width - fMarginsLR - TextExtents.cx;
+  end;
+  vClockTop := Center( TextExtents.cy, Height );
+  TextExtents := Canvas.TextExtent(FormatDateTime(fCalendarFormat,fDateTime));
+  case fCalendarPosition of
+    cpLeft :
+      vCalendarLeft := fMarginsLR;
+    cpCenter :
+      vCalendarLeft := Center( TextExtents.cx, Width );
+    cpRight :
+      vCalendarLeft := Width - fMarginsLR - TextExtents.cx;
+  end;
+  vCalendarTop := Center( TextExtents.cy, Height );
+end;
+
+procedure TRRClock.SetMarginsLR(AValue: Integer);
+begin
+  if fMarginsLR=AValue then Exit;
+  fMarginsLR:=AValue;
+  SetElementPositions;
+  Repaint;
+end;
+
+procedure TRRClock.SetOptions(AValue: TOptions);
+begin
+  if fOptions=AValue then Exit;
+  fOptions:=AValue;
+  Repaint;
+end;
+
+procedure TRRClock.SetRunning(AValue: Boolean);
+begin
+  if fRunning=AValue then Exit;
+  fRunning:=AValue;
+  vDate := -1;
+  if fRunning then
+    begin
+      vHideColon := true;
+      vColonTimer.Enabled := true;
+    end
+  else
+    begin
+      vColonTimer.Enabled := false;
+      vHideColon := False;
+    end;
+  vRRTimer.Interval := Trunc((60000 div fSpeedMultiplier)*(1.0 - fSpeedVernir));
+  vRRTimer.Enabled := fRunning;
+  RePaint;
+end;
+
+procedure TRRClock.SetSpeedMultiplier(AValue: Word);
+begin
+  if AValue < 1 then
+    AValue := 1;
+  if fSpeedMultiplier=AValue then Exit;
+  fSpeedMultiplier:=AValue;
+end;
+
+procedure TRRClock.SetSpeedVernir(AValue: Double);
+begin
+  if fSpeedVernir=AValue then Exit;
+  fSpeedVernir:=AValue;
+end;
+
+procedure TRRClock.SizeChanged(Sender: TObject);
+begin
+  SetElementPositions;
+  RePaint;
+end;
+
+function TRRClock.TimeStr(theTime: TDateTime; HideColon: Boolean): String;
+var
+  H, M, S, mS : Word;
+  AM : Boolean;
+  function Colon : String;
+  begin
+    if HideColon then
+      Result := ' '
+    else
+      Result := ':';
+  end;
+  function AMPMStr( IsAM : Boolean ) : String;
+  begin
+    if IsAM then
+      Result := ' AM'
+    else
+      Result := ' PM'
+  end;
+begin
+  DecodeTime( theTime, H, M, S, mS );
+  if fAMPM then
+    begin
+      AM := H < 12;
+      H := H mod 12;
+      if H = 0 then
+        H := 12
+    end;
+  if fAMPM then
+    Result := IntToStr( H ) + Colon + IntToStr( M, 1 ) + AMPMStr( AM )
+  else
+    Result := IntToStr( H, 1 ) + Colon + IntToStr( M, 1 );
+end;
+
+procedure TRRClock.ToggleColon(Sender: TObject);
+begin
+  vHideColon := not vHideColon;
+  RePaint;
+end;
+
+end.

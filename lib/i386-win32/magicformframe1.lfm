@@ -1,0 +1,15 @@
+object MagicFormFrame1: TMagicFormFrame1
+  Left = 0
+  Height = 140
+  Top = 0
+  Width = 329
+  HorzScrollBar.Page = 329
+  VertScrollBar.Page = 140
+  Align = alClient
+  AutoScroll = True
+  AutoSize = True
+  LCLVersion = '1.1'
+  TabOrder = 0
+  DesignLeft = 473
+  DesignTop = 203
+end

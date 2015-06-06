@@ -1,0 +1,34 @@
+object Form1: TForm1
+  Left = 569
+  Height = 416
+  Top = 94
+  Width = 513
+  Caption = 'Form1'
+  ClientHeight = 416
+  ClientWidth = 513
+  LCLVersion = '1.4.0.3'
+  object Button1: TButton
+    Left = 24
+    Height = 25
+    Top = 16
+    Width = 75
+    Caption = 'Button1'
+    OnClick = Button1Click
+    TabOrder = 0
+  end
+  object Panel1: TPanel
+    Left = 161
+    Height = 50
+    Top = 15
+    Width = 170
+    Caption = 'Panel1'
+    TabOrder = 1
+  end
+  object MagicFormPanel1: TMagicFormPanel
+    Left = 167
+    Height = 50
+    Top = 143
+    Width = 170
+    Centering = fpcBoth
+  end
+end

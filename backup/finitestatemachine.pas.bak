@@ -1,0 +1,319 @@
+unit FiniteStateMachine;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs;
+
+type
+  TFSMError = class(Exception);
+
+  TEnterState = procedure( Sender : TComponent; const State : String ) of object;
+
+  { TStateCallback }
+
+  TStateCallback = class(TCollectionItem)
+  private
+    fState : String;
+    fEnterState : TEnterState;
+  published
+    property Name : String read fState write fState;
+    property OnEnterState : TEnterState read fEnterState write fEnterState;
+  end;
+
+  { TEnterState }
+
+  TStateEntered = class(TCollection)
+  private
+    function GetItem( Index : Integer ) : TStateCallback;
+  public
+    function Add : TStateCallback;
+    property Item[Index: Integer] : TStateCallback read GetItem;
+  end;
+
+
+  { TFiniteStateMachine }
+
+  TFiniteStateMachine = class(TComponent)
+  private
+    fEvents: TStringList;
+    fIgnoreInvalid: Boolean;
+    fInitialState: String;
+    fStateCallbacks: TStateEntered;
+    fStates: TStringList;
+    fTransitions: TStringList;
+    function GetCurrentState: String;
+    procedure SetInitialState(AValue: String);
+    procedure SetTransitions(AValue: TStringList);
+    { Private declarations }
+    public
+    { Protected declarations }
+    vNumEvents : Integer;
+    vNumStates : Integer;
+    vNumTrans  : Integer;
+    vTransitions : array of Integer;
+    vCallbacks   : array of TEnterState;
+    vCallbackSet : array of Boolean;
+    vCurrentState : Integer;
+    procedure Loaded; override;
+    procedure DoCallback( StateIndex : Integer );
+  public
+    { Public declarations }
+    constructor Create( AOwner : TComponent );  override;
+    destructor  Destroy; override;
+
+    procedure EnterInitialState; // Must call in FormCreate
+    procedure Event( theEvent : String );
+
+    property States : TStringList read fStates write fStates;
+    property Events : TStringList read fEvents write fEvents;
+    property CurrentState : String read GetCurrentState;
+  published
+    { Published declarations }
+    property Transitions : TStringList read fTransitions write SetTransitions;
+    property InitialState  : String read fInitialState write SetInitialState;
+    property StateCallbacks : TStateEntered read fStateCallbacks write fStateCallbacks;
+    property IgnoreInvalidEvents : Boolean read fIgnoreInvalid write fIgnoreInvalid;
+  end;
+
+procedure Register;
+
+implementation
+
+uses
+  Stringsubs, LazLogger;
+
+procedure Register;
+begin
+  RegisterComponents('DRZ',[TFiniteStateMachine]);
+end;
+
+{ TEnterState }
+
+function TStateEntered.Add: TStateCallback;
+begin
+  Result := inherited Add as TStateCallback;
+end;
+
+function TStateEntered.GetItem(Index: Integer): TStateCallback;
+begin
+  Result := inherited Items[Index] as TStateCallback;
+end;
+
+{ TFiniteStateMachine }
+
+constructor TFiniteStateMachine.Create( AOwner : TComponent );
+begin
+  inherited Create( AOwner );
+  fEvents := TStringList.Create;
+  fEvents.Sorted := True;
+  fEvents.Duplicates := dupIgnore;
+  fEvents.CaseSensitive := False;
+  fStates := TStringList.Create;
+  fStates := TStringList.Create;
+  fStates.Sorted := True;
+  fStates.Duplicates := dupIgnore;
+  fInitialState := 'Start';
+  fStateCallbacks := TStateEntered.Create( TStateCallback );
+  fTransitions := TStringList.Create;
+  WriteLn( 'Created');
+end;
+
+destructor TFiniteStateMachine.Destroy;
+begin
+  fEvents.Free;
+  fStates.Free;
+  SetLength( vTransitions, 0);
+  SetLength( vCallbacks, 0);
+  SetLength( vCallbackSet, 0);
+  inherited Destroy;
+end;
+
+procedure TFiniteStateMachine.DoCallback(StateIndex: Integer);
+var
+  Callback : TEnterState;
+begin
+  if vCallbackSet[StateIndex] then
+    begin
+      Callback := vCallbacks[StateIndex];
+      Callback( Self, States[StateIndex] );
+    end;
+end;
+
+procedure TFiniteStateMachine.EnterInitialState;
+begin
+  vCurrentState := States.IndexOf( fInitialState );
+  DoCallback( vCurrentState );
+end;
+
+procedure TFiniteStateMachine.Event(theEvent: String);
+var
+  IE : Integer;
+  NewState : Integer;
+  Callback : TEnterState;
+begin
+  IE := Events.IndexOf( theEvent );
+  if IE < 0 then
+    raise Exception.Create('Unknown event: [' + theEvent + ']');
+  NewState := vTransitions[ vCurrentState * vNumEvents + IE ];
+  if NewState < 0 then
+    if fIgnoreInvalid then
+      exit
+    else
+      raise Exception.Create('Invalid event:  [' + theEvent + '] for state: ' + States[vCurrentState] );
+  vCurrentState := NewState;
+  DoCallback( NewState );
+end;
+
+function TFiniteStateMachine.GetCurrentState: String;
+begin
+  Result := States[vCurrentState];
+end;
+
+procedure TFiniteStateMachine.Loaded;
+type
+  TTrans = array[0..2] of String;
+var
+  I : Integer;
+  theEvent, theState, theNewState : Integer;
+  sEvent, sState, sNewState : String;
+  S : String;
+  Callback : TEnterState;
+  STrans : TTrans;
+  function ParseTransition( const theTrans : String; var Trans ) : Boolean;
+  var
+    I : Integer;
+    N : Integer;
+    S : String;
+    Blanks : Boolean;
+    Comment : Boolean;
+    OB : Boolean;
+  begin
+    S := Trim(theTrans);
+    I := Pos('#',S);
+    WriteLn('['+S+'] ',I);
+    Comment := I > 0;
+    Result := False;
+    if Comment then
+      begin
+        S := Copy(S,1,I-1);
+        WriteLn('['+S+'] ',I);
+        if Length(S) = 0 then
+          Exit;
+      end;
+
+    for N := 0 to 2 do
+      STrans[N] := '';
+    N := -1;
+    Blanks := True;
+    for I := 1 to Length(S) do
+      begin
+        OB := Blanks;
+        Blanks := S[I] in [' ',#9];
+        if not Blanks then
+          begin
+            if OB then
+              Inc(N);
+            if N > 2 then
+              raise TFSMError.CreateFmt( 'Too many fields in: [%s] at column %d',[theTrans,I] );
+            STrans[N] := STrans[N] + S[I];
+          end;
+      end;
+    if N < 2 then
+      raise TFSMError.CreateFmt( 'Too few fields (%d of 3) in : [%s]',[N+1,theTrans] );
+    Result := True;
+  end;
+begin
+  inherited Loaded;
+  Events.Clear;
+  States.Clear;
+  // Events and States are populated first (due to sorting), then
+  // an appropriate array is created for speed.
+  for I := 0 to pred( fTransitions.Count ) do
+    begin
+      if ParseTransition( fTransitions.Strings[I], sTrans ) then
+        begin
+          Events.Add( sTrans[1] );
+          States.Add( sTrans[0] );
+          States.Add( sTrans[2] );
+        end;
+    end;
+  for I := 0 to pred( fStateCallbacks.Count ) do
+    begin
+      sState := fStateCallbacks.Item[I].Name;
+      if Empty(sState) then
+        raise TFSMError.CreateFmt('State blank in Callback %d',[I]);
+      States.Add( sState );
+    end;
+  States.Add( fInitialState );
+  S := fInitialState;
+  vCurrentState := States.IndexOf( S );
+  vNumStates := States.Count;
+  vNumEvents := Events.Count;
+  vNumTrans  := vNumStates*vNumEvents;
+  SetLength( vTransitions, States.Count * Events.Count );
+  for I := 0 to pred( vNumTrans ) do
+    begin
+      vTransitions[I] := -1; // Initialize to invalid
+    end;
+  for I := 0 to pred( fTransitions.Count ) do
+    begin
+      if ParseTransition( fTransitions.Strings[I], sTrans ) then
+        begin
+          theEvent := Events.IndexOf( sTrans[1] );
+          theState := States.IndexOf( sTrans[0] );
+          theNewState := States.IndexOf( sTrans[2] );
+          vTransitions[ theState * vNumEvents + theEvent ] := theNewState;
+        end;
+    end;
+  SetLength( vCallbacks, vNumStates );
+  SetLength( vCallbackSet, vNumStates );
+  for I := 0 to pred( fStateCallbacks.Count ) do
+    begin
+      vCallbacks[I] := nil;
+      vCallbackSet[I] := False;
+    end;
+  for I := 0 to pred( fStateCallbacks.Count ) do
+    begin
+      S := fStateCallbacks.Item[I].Name;
+      theState := States.IndexOf( fStateCallbacks.Item[I].Name );
+      Callback := fStateCallbacks.Item[I].fEnterState;
+      vCallbacks[theState] := Callback;
+      vCallbackSet[theState] := True;
+    end;
+
+// Tried to enter the initial state here, but it got out of sync with
+// reading the form file and hung the IDE.
+//// Enter the initial state
+//  if vCallbackSet[vCurrentState] then
+//    begin
+//      Callback := vCallbacks[vCurrentState];
+//      Callback( Self, States[vCurrentState] );
+//    end;
+end;
+
+procedure TFiniteStateMachine.SetInitialState(AValue: String);
+begin
+  if fInitialState=AValue then Exit;
+  fInitialState:=AValue;
+  vCurrentState := States.IndexOf( AValue );
+end;
+
+procedure TFiniteStateMachine.SetTransitions(AValue: TStringList);
+begin
+  if fTransitions=AValue then Exit;
+  if AValue <> nil then
+    begin
+      fTransitions.Assign(AValue);
+    end
+  else
+    begin
+      if Assigned( fTransitions ) then
+        fTransitions.Free;
+      fTransitions := TStringList.Create;
+    end;
+end;
+
+end.

@@ -1,0 +1,91 @@
+unit CommonLog;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils;
+
+type
+
+  { TCommonLog }
+
+  TCommonLog = class
+
+  private
+    fActive: Boolean;
+    fFileName : String;
+    vFile     : TextFile;
+    procedure SetActive(AValue: Boolean);
+  public
+    constructor Create(theFileName : String = '');
+
+    procedure PutLn( Str : String );
+    procedure FormatLn( Str : String; Args : array of const );
+    procedure Timing( Start : TDateTime; What : String = '' );
+
+    property Active : Boolean read fActive write SetActive;
+    property FileName : String read fFileName;
+
+  end;
+
+var
+  Log : TCommonLog;
+
+implementation
+
+uses
+  CommonAPP, Stringsubs;
+
+{ TCommonLog }
+
+constructor TCommonLog.Create(theFileName: String);
+begin
+  if Empty( theFileName ) then
+    fFileName := DefaultSaveLocation(ApplicationName,'Logs')+'IronMikeLog.txt'
+  else
+    fFileName := theFileName;
+  AssignFile( vFile, fFileName );
+  Rewrite( vFile );
+  CloseFile( vFile );
+end;
+
+procedure TCommonLog.FormatLn(Str: String; Args: array of const);
+begin
+  Append( vFile );
+  WriteLn( vFile, Format(Str,Args) );
+  CloseFile( vFile );
+end;
+
+procedure TCommonLog.SetActive(AValue: Boolean);
+begin
+  if fActive=AValue then Exit;
+  fActive:=AValue;
+end;
+
+procedure TCommonLog.Timing(Start: TDateTime; What : String);
+var
+  DT : TDateTime;
+begin
+  DT := Now - Start;
+  PutLn( 'Time:  ' + FormatDateTime('s.zzz',DT) + ' -- ' + What );
+end;
+
+procedure TCommonLog.PutLn(Str: String);
+begin
+  Append( vFile );
+  WriteLn( vFile, Str );
+  CloseFile( vFile );
+end;
+
+initialization
+
+  Log := TCommonLog.Create;
+
+finalization
+
+  Log.Destroy;
+
+end.
+

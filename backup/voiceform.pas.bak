@@ -1,0 +1,115 @@
+unit VoiceForm;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
+  VoiceUnit, ComCtrls, Buttons;
+
+type
+
+  { TVoicePreferencesForm }
+
+  TVoicePreferencesForm = class(TForm)
+    ButtonAccept: TBitBtn;
+    ButtonDefaults: TBitBtn;
+    ButtonClose: TBitBtn;
+    ButonTest: TBitBtn;
+    ComboBox1: TComboBox;
+    Edit1: TEdit;
+    Label1: TLabel;
+    Label2: TLabel;
+    Label3: TLabel;
+    Label4: TLabel;
+    Label5: TLabel;
+    TrackBar1: TTrackBar;
+    procedure ButtonAcceptClick(Sender: TObject);
+    procedure ButtonDefaultsClick(Sender: TObject);
+    procedure ButonTestClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+  private
+    { private declarations }
+    fSpeed : Integer;
+    fVoice : Integer;
+    VoiceQueue : TVoiceQueue;
+    procedure SetControls;
+  public
+    { public declarations }
+    procedure Say( What : String );
+    procedure TestString( What : String );
+  end;
+
+var
+  VoicePreferencesForm: TVoicePreferencesForm;
+
+implementation
+
+{$R *.lfm}
+
+uses
+  CommonIni;
+
+{ TVoicePreferencesForm }
+
+procedure TVoicePreferencesForm.ButtonDefaultsClick(Sender: TObject);
+begin
+  fVoice := 0;
+  fSpeed := 5;
+  SetControls;
+end;
+
+procedure TVoicePreferencesForm.ButonTestClick(Sender: TObject);
+var
+  S : String;
+begin
+  VoiceQueue.Voice:= ComboBox1.ItemIndex;
+  VoiceQueue.Speed := TrackBar1.Position;
+  S := Edit1.Text;
+  VoiceQueue.Say( S );
+end;
+
+procedure TVoicePreferencesForm.ButtonAcceptClick(Sender: TObject);
+begin
+  SetConfig('Voice','Speaker',ComboBox1.ItemIndex);
+  SetConfig('Voice','Speed',TrackBar1.Position);
+end;
+
+procedure TVoicePreferencesForm.FormCreate(Sender: TObject);
+begin
+  fVoice := GetConfig('Voice','Speaker',0);
+  fSpeed := GetConfig('Voice','Speed',5);
+  VoiceQueue := TVoiceQueue.Create;
+  VoiceQueue.Speed := fSpeed;
+  VoiceQueue.Voice := fVoice;
+  SetControls;
+end;
+
+procedure TVoicePreferencesForm.FormShow(Sender: TObject);
+begin
+  fVoice := GetConfig('Voice','Speaker',0);
+  fSpeed := GetConfig('Voice','Speed',5);
+  SetControls;
+end;
+
+procedure TVoicePreferencesForm.Say(What: String);
+begin
+  VoiceQueue.Say(What);
+end;
+
+procedure TVoicePreferencesForm.SetControls;
+begin
+  ComboBox1.ItemIndex := fVoice;
+  TrackBar1.Position := fSpeed;
+end;
+
+procedure TVoicePreferencesForm.TestString(What: String);
+begin
+  Edit1.Text := What;
+end;
+
+
+end.
+

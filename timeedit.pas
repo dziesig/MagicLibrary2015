@@ -1,0 +1,298 @@
+unit TimeEdit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  StdCtrls;
+
+type
+
+  { TTimeEdit }
+
+  TTimeEdit = class(TCustomControl)
+  //TTimeEdit = class(TCustomPanel)
+  private
+    fAMPM: Boolean;
+    fReadOnly: Boolean;
+    fDateTime: String;
+    fOnChange: TNotifyEvent;
+    procedure SetAMPM(AValue: Boolean);
+    procedure SetReadOnly(AValue: Boolean);
+    procedure SetDateTime(AValue: String);
+    function GetTime: TDateTime;
+    procedure SetTime(AValue: TDateTime);
+    procedure TextExtent;
+    procedure ShowSize( Combo : TComboBox );
+  protected
+    { Protected declarations }
+    fHourCombo   : TComboBox;
+    fMinuteCombo : TComboBox;
+    fAMPMCombo   : TComboBox;
+
+    procedure FontChanged( Sender : TObject ); override;
+    procedure PopulateHours;
+    procedure ReDraw; // Handles changes in font/ampm, etc.
+  public
+    { Public declarations }
+    constructor Create( theOwner : TComponent ); override;
+    destructor  Destroy; override;
+    procedure Loaded; override;
+    property DateTime      : TDateTime read GetTime write SetTime;
+
+  published
+    { Published declarations }
+    property AMPM          : Boolean read fAMPM            write SetAMPM;
+    property ReadOnly      : Boolean read fReadOnly        write SetReadOnly;
+    property Time          : String  read fDateTime        write SetDateTime;
+    property Font;
+    property Height;
+    property Width;
+
+    property OnTimeChange  : TNotifyEvent read fOnChange   write fOnChange;
+  end;
+
+procedure Register;
+
+implementation
+
+uses
+  Types;
+
+procedure Register;
+begin
+  {$I timeedit_icon.lrs}
+  RegisterComponents('Magic',[TTimeEdit]);
+end;
+
+{ TTimeEdit }
+
+constructor TTimeEdit.Create(theOwner: TComponent);
+var
+  I : Integer;
+begin
+  writeln('start of create');
+  inherited Create(theOwner);
+  Parent := theOwner as TWinControl;
+  TextExtent;
+  writeln('creating combos');
+  fHourCombo   := TComboBox.Create( self );
+  fMinuteCombo := TComboBox.Create( self );
+  fAMPMCombo   := TComboBox.Create( self );
+  writeln('combos created');
+  fHourCombo.Parent   := self;
+  fMinuteCombo.Parent := self;
+  fAMPMCombo.Parent   := self;
+  fHourCombo.SetSubComponent(True);
+  fMinuteCombo.SetSubComponent(True);
+  fAMPMCombo.SetSubComponent(True);
+  fHourCombo.Name   := 'HourCombo';
+  fMinuteCombo.Name := 'MinuteCombo';
+  fAMPMCombo.Name   := 'AMPMCombo';
+  //fHourCombo.Font.Assign(Font);
+  //fMinuteCombo.Font.Assign(Font);
+  //fAMPMCombo.Font.Assign(Font);
+  //writeln('Font: ',Font.Name,' ',Font.Size );
+  //writeln('hour combo font:  ',fHourCombo.Font.Name,' ',fHourCombo.Font.Size);
+  //fHourCombo.Height := 31;
+  //fMinuteCombo.Height := 31;
+  //fAMPMCombo.Height := 31;
+  //fHourCombo.Width := 62;
+  //fMinuteCombo.Width := 62;
+  //fAMPMCombo.Width := 75;
+  //fHourCombo.DropDownCount   := 8;
+  //fMinuteCombo.DropDownCount := 8;
+  //fAMPMCombo.DropDownCount   := 8;
+  fMinuteCombo.Clear;
+  for I := 0 to 59 do
+    if I < 10 then
+      fMinuteCombo.Items.Add('0' + IntToStr(I))
+    else
+      fMinuteCombo.Items.Add(IntToStr(I));
+  fMinuteCombo.Style := csDropDownList;
+  fHourCombo.Style := csDropDownList;
+  fAMPMCombo.Style := csDropDownList;
+  fAMPMCombo.Clear;
+  fAMPMCombo.Items.Add('AM');
+  fAMPMCombo.Items.Add('PM');
+  fHourCombo.ItemIndex := 0;
+  fMinuteCombo.ItemIndex := 0;
+  fAMPMCombo.ItemIndex := 0;
+  PopulateHours;
+  ReDraw;
+  writeln('end of create');
+end;
+
+destructor TTimeEdit.Destroy;
+begin
+  fHourCombo.Free;
+  fMinuteCombo.Free;
+  fAMPMCombo.Free;
+  inherited Destroy;
+end;
+
+function TTimeEdit.GetTime: TDateTime;
+begin
+
+end;
+
+procedure TTimeEdit.FontChanged(Sender: TObject);
+begin
+  inherited FontChanged(Sender);
+  if not Assigned(fHourCombo) then exit;
+  writeln('start font changed');
+  TextExtent;
+  writeln('Font: ',Font.Name,' ',Font.Size );
+  writeln('combo font:  ',fHourCombo.Font.Name,' ',fHourCombo.Font.Size );
+  writeln('height:  ',fHourCombo.Height);
+  fHourCombo.Font.Assign(Font);
+  fMinuteCombo.Font.Assign(Font);
+  fAMPMCombo.Font.Assign(Font);
+  TextExtent;
+  //fHourCombo.AdjustSize;
+  //fMinuteCombo.AdjustSize;
+  //fAMPMCombo.AdjustSize;
+  //fHourCombo.Invalidate;
+  //fMinuteCombo.Invalidate;
+  //fAMPMCombo.Invalidate;
+  writeln('combo font:  ',fHourCombo.Font.Name,' ',fHourCombo.Font.Size );
+  writeln('height:  ',fHourCombo.Height);
+  ReDraw;
+  //TextExtent;
+  writeln('end font changed');
+end;
+
+procedure TTimeEdit.Loaded;
+begin
+  writeln('start loaded');
+  inherited Loaded;
+  TextExtent;
+  PopulateHours;
+  ReDraw;
+  writeln('end loaded');
+end;
+
+procedure TTimeEdit.PopulateHours;
+var
+  I : Integer;
+begin
+  fHourCombo.Clear;
+  if fAMPM then
+    begin
+      for I := 0 to 11 do
+        begin
+          if I = 0 then
+            fHourCombo.Items.Add('12')
+          else if I < 10 then
+            fHourCombo.Items.Add(' ' + IntToStr(I))
+          else
+            fHourCombo.Items.Add(IntToStr(I));
+        end;
+      fAMPMCombo.Visible := True;
+    end
+  else
+    begin
+      for I := 0 to 23 do
+        if I < 10 then
+          fHourCombo.Items.Add('0' + IntToStr(I))
+        else
+          fHourCombo.Items.Add(IntToStr(I));
+      fAMPMCombo.Visible := False;
+    end;
+  fHourCombo.ItemIndex := 0;
+end;
+
+procedure TTimeEdit.ReDraw;
+var
+  W : Integer;
+  Separation : Integer;
+begin
+  writeln('start redraw');
+  ShowSize(fHourCombo);
+  Height := fHourCombo.Height;
+  writeln('height: ',Height);
+  //W := Round((4*fHourCombo.Height) / 2);
+  Separation := fHourCombo.Height div 4;
+  //WriteLn('New Width:  ',W);
+  //fHourCombo.Width := W;
+  //fMinuteCombo.Width := W;
+  //W := Round((4.5*fHourCombo.Height) / 2);
+  //fAMPMCombo.Width := W;
+  fMinuteCombo.Left := fHourCombo.Width + Separation;
+  fAMPMCombo.Left := fMinuteCombo.Left + fMinuteCombo.Width + Separation;
+  if fAMPM then
+    ClientWidth := fAMPMCombo.Left + fAMPMCombo.Width
+  else
+    ClientWidth := fMinuteCombo.Left + fMinuteCombo.Width;
+  //Height := fHourCombo.Height;
+  //fHourCombo.Invalidate;
+  //fMinuteCombo.Invalidate;
+  //fAMPMCombo.Invalidate;
+  Invalidate;
+  writeln('end redraw');
+end;
+
+procedure TTimeEdit.SetAMPM(AValue: Boolean);
+begin
+  writeln('start setampm');
+  fAMPM:=AValue;
+  PopulateHours;
+  ReDraw;
+  writeln('end setampm');
+end;
+
+procedure TTimeEdit.SetDateTime(AValue: String);
+begin
+  if fDateTime=AValue then Exit;
+  fDateTime:=AValue;
+end;
+
+procedure TTimeEdit.SetReadOnly(AValue: Boolean);
+begin
+  if fReadOnly=AValue then Exit;
+  fReadOnly:=AValue;
+end;
+
+procedure TTimeEdit.SetTime(AValue: TDateTime);
+begin
+
+end;
+
+procedure TTimeEdit.ShowSize(Combo: TComboBox);
+begin
+  Writeln('Combo:  ',Combo.Name,' ',Combo.Height, ' ', Combo.Width);
+end;
+
+procedure TTimeEdit.TextExtent;
+var
+  S : TSize;
+begin
+  try
+    S := Canvas.TextExtent('00');
+    Writeln('text: height  ',s.cy,' width ',s.cx);
+    if Assigned( fHourCombo ) then
+      begin
+        fHourCombo.Height := 2*s.cy;
+        fHourCombo.Width := s.cx + 2*s.cy;
+        fMinuteCombo.Height := 2*s.cy;
+        fMinuteCombo.Width := s.cx + 2*s.cy;
+        ShowSize(fHourCombo);
+        ShowSize(fMinuteCombo);
+        S := Canvas.TextExtent('AM');
+        fAMPMCombo.Height := s.cy;
+        fAMPMCombo.Width := s.cx + 2*s.cy;
+        ShowSize(fAMPMCombo);
+        fHourCombo.RePaint;
+        fMinuteCombo.RePaint;
+        fAMPMCombo.RePaint;
+      end;
+  except
+    writeln('no measurement');
+
+  end;
+end;
+
+
+end.

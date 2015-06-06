@@ -1,0 +1,50 @@
+unit TestFormPanelUnit1;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  StdCtrls, FormPanel;
+
+type
+
+  { TForm1 }
+
+  TForm1 = class(TForm)
+    Button1: TButton;
+    MagicFormPanel1: TMagicFormPanel;
+    Panel1: TPanel;
+    procedure Button1Click(Sender: TObject);
+  private
+    { private declarations }
+    TheForm : TForm;
+  public
+    { public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+uses
+ CommonDebug,
+  LazLogger,
+  TestFormPanelUnit2;
+
+{$R *.lfm}
+
+{ TForm1 }
+
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  if MagicFormPanel1.Form = Form2 then
+    MagicFormPanel1.Form  := nil
+  else
+    MagicFormPanel1.Form := Form2;
+end;
+
+end.
+

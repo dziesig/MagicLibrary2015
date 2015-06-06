@@ -1,0 +1,767 @@
+unit BPlusTreeUnit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils;
+
+const
+  D = 4; // each node stores up to d references to children and up to d − 1 keys
+  BlockSize = 64; // 64 for development, 4096 for production
+
+type
+  TBPlusTree = class; // Forward reference
+
+  TBPlusTreeError = class( Exception )
+  end;
+
+  NotFound = class( Exception );
+  DuplicateKey = class( Exception );
+
+  TLink = record
+    Key : LongInt;
+    Ref : LongInt;
+  end;
+
+  TNodeKind = ( Leaf, Internal, FreeNode );
+
+  TNodeData = record
+    Parent : Longint;     // Reference to the parent node (may not be needed)
+    K      : SmallInt;    // the number of keys in Node ( K < D )
+    Kind   : TNodeKind;   // So we can read the node and get the right subclass
+    Prev   : LongInt;     // Linked list of leaves for fast sequential access
+    Next   : Longint;     // Linked list of leaves for fast sequential access
+    // There is one more link here than allowed in an on-disk node.  This allows
+    // Us to over-fill the node, then split it - which is much much faster than
+    // Splitting, then finding the correct node for insertion....
+    Links  : array[0..D] of TLink;
+  end;
+
+  { TNode }
+
+  TNode = object
+  private
+    fNodeNum: LongInt;
+    //fParent: LongInt;
+    function GetLeaf: Boolean;
+    function getLinks(Index : Integer): TLink;
+    function getNext: Longint; virtual;
+    function getPrev: Longint; virtual;
+    procedure SetK(AValue: SmallInt);
+    procedure setLinks(Index : Integer; AValue: TLink);
+    procedure setNext(AValue: Longint);
+    procedure SetNodeNum(AValue: LongInt);
+    procedure SetParent(AValue: LongInt);
+    procedure setPrev(AValue: Longint);
+  protected
+    Data      : TNodeData;     // The stuff that gets written to disk
+    Modified  : Boolean;       // Only write when modified
+    BPlusFile : TBPlusTree;    // Where to read/write
+
+    //constructor Create( theTree : TBPlusTree; theNodeNum : Longint ); // For TBPlusTree only
+    procedure Init( Kind : TNodeKind; theTree : TBPlusTree; theNodeNum : LongInt );
+
+    function Find( Key : Longint ) : Longint;  // Returns the Ref for Key
+                                               // Raises NotFound if Leaf
+
+    procedure HexDump( List : TStrings );
+
+    procedure InsertIntoLeaf( Key, Ref : LongInt );
+    procedure InsertIntoInternal( Key, Ref : LongInt );
+    procedure InsertIntoInternal( Left, Right : TNode );
+
+    procedure OpenLinksFrom( Idx : SmallInt );
+
+    procedure Write;
+
+    function SplitLeaf : TNode;
+    function SplitInternal : TNode;
+
+    property K : SmallInt read Data.K write SetK;
+  public
+
+    //destructor  Destroy; virtual;
+
+    class function New( theTree : TBPlusTree; theKind : TNodeKind ) : TNode;
+    class function Read( theTree : TBPlusTree; theNodeNum : Longint ) : TNode;
+
+    procedure Insert( Key, Ref : LongInt );
+
+    property Links[Index : Integer] : TLink read getLinks write setLinks;
+    property Kind     : TNodeKind read Data.Kind;
+    property Next     : Longint   read getNext write setNext;
+    property Prev     : Longint   read getPrev write setPrev;
+
+    property Parent   : LongInt   read Data.Parent write SetParent;
+    property NodeNum  : LongInt   read fNodeNum write SetNodeNum;
+    property IsLeaf   : Boolean   read GetLeaf;
+  end;
+
+
+  // Note that this header is stored with the size of a block so that
+  // the remaining blocks are aligned with filesystem blocks for speed.
+  TBPlusTreeHeader = record
+    Root : Longint; // Position of root (starts at 1.  This Header is at 0)
+    Free : Longint; // Position of first free node( starts at 1.)
+    Last : LongInt; // Position of the last used node
+  end;
+
+  { TBPlusTree }
+
+  TBPlusTree = class( TFileStream )
+  private
+    function GetRootNode: TNode;
+    procedure SetFree(AValue: Longint);
+    procedure SetLast(AValue: Longint);
+    procedure SetRoot(AValue: LongInt);
+  protected
+    Modified : Boolean;
+    Header : TBPlusTreeHeader;
+
+    function FirstAvailableNode : LongInt;
+    function FindNode( Key : LongInt ) : TNode;
+    function NewNode( Kind : TNodeKind ) : TNode;
+    function NewRoot : TNode;
+    procedure HeaderRead;
+    procedure HeaderWrite( Force : Boolean = false );
+
+    property Root : LongInt read Header.Root write SetRoot;
+    property Free : Longint read Header.Free write SetFree;
+    property Last : Longint read Header.Last write SetLast;
+
+    property RootNode : TNode read GetRootNode;
+  public
+
+    constructor Create( theFileName : String );
+    constructor Open( theFileName : String );
+    destructor  Destroy; override;
+
+
+    procedure Insert( Key, Ref : LongInt );    // Raises DuplicateKey
+
+    function  Find( Key : Longint ) : Longint; // Raises NotFound
+
+    procedure Write( Node : TNode ); overload;
+    function  Read( NodeNum : LongInt ) : TNode; overload;
+
+    procedure HexDump( List : TStrings );
+    procedure zzzDebugHeader;
+  end;
+
+implementation
+
+uses
+  CommonDebug, StringSubs;   // These units for development and testing only
+
+const
+  NullLink : TLink = ( Key : -999; Ref : -999 );
+
+{ TNode }
+
+function TNode.Find(Key: Longint): Longint;
+var
+  I : SmallInt;
+begin
+  { TODO 2 -oDRZ -cEfficiency : This code should be replaced by a binary search when everything else works. }
+  for I := 0 to pred(K) do
+    if Key < Links[I].Key then
+      begin
+        Result := I;
+        Exit;
+      end;
+  Result := K;
+end;
+
+function TNode.GetLeaf: Boolean;
+begin
+  Result := Data.Kind = Leaf;
+end;
+
+function TNode.getLinks(Index : Integer): TLink;
+begin
+  Result := Data.Links[Index];
+end;
+
+function TNode.getNext: Longint;
+begin
+  Result := Data.Next;
+end;
+
+function TNode.getPrev: Longint;
+begin
+  Result := Data.Prev;
+end;
+
+procedure TNode.HexDump(List: TStrings);
+var
+  I : Integer;
+begin
+  case Kind of
+    Leaf:     List.Add('Leaf Node');
+    Internal: List.Add('Internal Node');
+    FreeNode: List.Add('Free Node')
+  end;
+  if Kind in [Leaf, Internal] then
+    begin
+      List.Add('Node:         ' + IntToStr(NodeNum,8,' ') );
+      List.Add('Parent:       ' + IntToHex(Parent, 8 ) );
+      List.Add('K:            ' + IntToStr(K,8,' ') );
+      for I := 0 to D do
+        List.Add('Link[' + IntToStr(I, 3) + ']:  ' + IntToStr( Links[I].Key,3,' ' ) + ' -> '
+                                                   + IntToStr( Links[I].Ref,3,' ' ) );
+      if not IsLeaf then
+        List.Add('Link[' + IntToStr(K, 3) + ']:  ' + ' XXX' + ' -> '
+                                                   + IntToStr( Links[K].Ref ) );
+    end;
+  case Kind of
+    Leaf:
+      begin
+        List.Add('Prev;         ' + IntToStr(Data.Prev,8,' ') );
+        List.Add('Next;         ' + IntToStr(Data.Next,8,' ') );
+      end;
+    //Internal:
+    //  List.Add('NextLink:     ' + IntToStr(Data.NextLink,8,' ') );
+    //Empty:
+    //  List.Add('Next Free:    ' + IntToStr(Data.NextLink,8,' ') );
+  end;
+  List.Add('======================================');
+end;
+
+procedure TNode.Init(Kind: TNodeKind; theTree: TBPlusTree; theNodeNum: LongInt);
+var
+  I : SmallInt;
+begin
+  Data.Kind := Kind;
+  Data.Next := 0;
+  Data.Prev := 0;
+  Data.K    := 0;
+  Data.Parent := 0;
+  BPlusFile := theTree;
+  NodeNum := theNodeNum;
+  Modified := False;
+  for I := 0 to D do
+    Data.Links[I] := NullLink;
+end;
+
+procedure TNode.Insert(Key, Ref: LongInt);
+begin
+  case Kind of
+    Leaf:  InsertIntoLeaf( Key, Ref );
+    Internal : InsertIntoInternal( Key, Ref );
+    FreeNode : raise TBPlusTreeError.Create( 'Attempt to insert into Empty node');
+  end;
+end;
+
+//  procedure DivideNodes( var Src, Dest : TNode );
+//  var
+//    Link : TLink;
+//    I    : SmallInt;
+//    Null : TLink; // Null Link
+//  begin
+//    Null.Key := -1;
+//    Null.Ref := -1;
+//    for I := 0 to pred( D div 2 ) do
+//      begin
+//        Dest.Links[I] := Src.Links[I + D div 2];
+//        Src.Links[I + D div 2] := Null;
+//      end;
+//    Src.K := D div 2;
+//    Dest.K := D div 2;
+//  end;
+//
+//var
+//  Idx  : SmallInt;
+//  I    : SmallInt;
+//  Link : TLink;
+//  P    : TNode; // The parent node
+//  N    : TNode; // The sibling node
+//  Null : TLink; // Null Link
+//begin
+//  BPlusFile.zzzDebugHeader;
+//  if K >= D then // Is this correct for internal?
+//    begin
+//      N := BPlusFile.NewNode( Self.Kind );
+//      DivideNodes(Self,N);
+//      if Parent = 0 then
+//        begin
+//          P := BPlusFile.NewRoot;
+//          Parent := P.NodeNum;
+//          N.Parent := P.NodeNum;
+//          Link.Key := N.Links[0].Key;
+//          Link.Ref := NodeNum;
+//          P.Links[0] := Link;
+//          Link.Key := -1;
+//          Link.Ref := N.NodeNum;
+//          P.Links[1] := Link;
+//          P.K := 1;
+//          BPlusFile.Write( Self );
+//          BPlusFile.Write(N);
+//          if IsLeaf then
+//            begin
+//              //P.Insert( N.Links[0].Key, N.NodeNum );
+//              BPlusFile.Write(P);
+//              BPlusFile.Insert( Key, Ref );
+//            end
+//          else
+//            Stub('Insert into Internal Node');
+//        end
+//      else
+//        begin
+//          BPlusFile.Write( Self );
+//          BPlusFile.Write(N);
+//          P := TNode.Read( BPlusFile, Parent);
+//          P.Insert( N.Links[0].Key, N.NodeNum );
+//          BPlusFile.Insert( Key, Ref );
+//        end;
+//     // Insert into parent here
+//      BPlusFile.Write(P);
+//    end
+//  else
+//    begin
+//      Idx := Find( Key );
+//{ TODO 1 -oDRZ -cPotential Bug : Validate the check for duplicate key entry. }
+//      if Links[Idx].Key = Key then
+//        raise DuplicateKey.Create('Attempt to insert Duplicate of key = ' + IntToStr( Key ) );
+//      for I := pred(D) downto succ(Idx) do
+//        Links[I] := Links[I-1];
+//      Link.Key := Key;
+//      Link.Ref := Ref;
+//      Links[Idx] := Link;
+//      K := K + 1;
+//      Write;
+//      //BPlusFile.Write(Self);
+//    end;
+//    BPlusFile.zzzDebugHeader;
+//end;
+
+procedure TNode.InsertIntoInternal(Key, Ref: LongInt);
+var
+  Link : TLink;
+  Idx  : SmallInt;
+  NewLeaf : TNode;
+  P       : TNode; // The parent (created if needed)
+begin
+  Idx := Find( Key );
+  OpenLinksFrom( Idx );
+  Link.Key := Key;
+  Link.Ref := Ref;
+  Links[Idx] := Link;
+  K := K + 1;
+  Write;
+  //if K >= succ(D) then // Is this Internal Node full?
+  //  begin
+  //    Stub('Insert into full internal node')
+  //  end
+  //else
+  //  begin
+  //    Stub('Insert into internal node');
+  //  end;
+end;
+
+procedure TNode.InsertIntoInternal(Left, Right: TNode);
+var
+  Link : TLink;
+begin
+  if K = 0 then  // This should only happen with a new root
+    begin
+      Link.Key := Right.Links[0].Key;
+      Link.Ref := Left.NodeNum;
+      Links[0] := Link;
+      Link := NullLink;
+      Link.Ref := Right.NodeNum;
+      Links[1] := Link;
+      K := 1;
+      Write;
+    end
+  else if K >= D then
+    begin
+      Stub('Insert into Full Internal node');
+    end
+  else
+    begin
+      Insert( Right.Links[0].Key, Right.NodeNum );
+    end;
+end;
+
+procedure TNode.InsertIntoLeaf(Key, Ref: LongInt);
+var
+  Link : TLink;
+  Idx  : SmallInt;
+  NewLeaf : TNode;
+  P       : TNode; // The parent (created if needed)
+begin
+  Idx := Find( Key );
+  OpenLinksFrom( Idx );
+  Link.Key := Key;
+  Link.Ref := Ref;
+  Links[Idx] := Link;
+  K := K + 1;
+  if K > D then // Is this leaf Full?
+    begin
+      NewLeaf := SplitLeaf;
+      if Parent = 0 then
+        begin
+          P := BPlusFile.NewRoot;
+          Parent := P.NodeNum;
+        end
+      else
+        P := BPlusFile.Read( Parent );
+      NewLeaf.Parent := Parent;
+      NewLeaf.Write;
+      P.InsertIntoInternal( Self, NewLeaf );
+    end;
+  Write;
+end;
+
+class function TNode.New(theTree: TBPlusTree; theKind: TNodeKind): TNode;
+begin
+  Result := theTree.NewNode( theKind );
+end;
+
+procedure TNode.OpenLinksFrom(Idx: SmallInt);
+var
+  I : SmallInt;
+begin
+  for I := D downto Idx do
+    Data.Links[I] := Data.Links[I-1];
+end;
+
+class function TNode.Read(theTree: TBPlusTree; theNodeNum: Longint): TNode;
+begin
+  Result := theTree.Read( theNodeNum );
+end;
+
+procedure TNode.SetK(AValue: SmallInt);
+begin
+  Modified := Data.K <> AValue;
+  if Modified then
+    Data.K := AValue;
+end;
+
+procedure TNode.setLinks(Index : Integer; AValue: TLink);
+begin
+  if (Data.Links[Index].Key <> AValue.Key) or
+     (Data.Links[Index].Ref <> AValue.Ref) then
+    begin
+      Data.Links[Index] := AValue;
+      Modified := True;
+    end;
+end;
+
+procedure TNode.setNext(AValue: Longint);
+begin
+  if Data.Next <> AValue then
+    begin
+      Data.Next := AValue;
+      Modified := true;
+    end;
+end;
+
+procedure TNode.SetNodeNum(AValue: LongInt);
+begin
+  if fNodeNum=AValue then Exit;
+    fNodeNum:=AValue;
+  if fNodeNum < 1 then
+    raise TBPlusTreeError.Create('Setting NodeNum to ' + IntToStr( fNodeNum ) );
+end;
+
+procedure TNode.SetParent(AValue: LongInt);
+begin
+  if Data.Parent=AValue then Exit;
+  Data.Parent:=AValue;
+  Modified := True;
+end;
+
+procedure TNode.setPrev(AValue: Longint);
+begin
+  if Data.Prev <> AValue then
+    begin
+      Data.Prev := AValue;
+      Modified := true;
+    end;
+end;
+
+function TNode.SplitInternal: TNode;
+begin
+
+end;
+
+function TNode.SplitLeaf: TNode;
+var
+  I, J : SmallInt;
+begin
+  Result := BPlusFile.NewNode( Leaf );
+  for I := 0 to pred(D div 2) do
+    begin
+      J := I + succ(D div 2);
+      Result.Links[I] := Links[J];
+      Links[J] := NullLink;
+    end;
+  K := D div 2 + 1;
+  Result.K := D div 2;
+  Result.Data.Next := Data.Next;
+  Data.Next := Result.NodeNum;
+  Result.Data.Prev := NodeNum;
+end;
+
+procedure TNode.Write;
+begin
+  BPlusFile.Write( Self );
+end;
+
+{ TBPlusTree }
+
+constructor TBPlusTree.Create(theFileName: String);
+begin
+  inherited Create( theFileName, fmOpenReadWrite or fmCreate );
+  Last := 0;    // The header is at block 0
+  Root := 0;
+  Free := 0;
+  HeaderWrite( True );
+end;
+
+destructor TBPlusTree.Destroy;
+begin
+  HeaderWrite; // Just in caae
+  inherited Destroy;
+end;
+
+function TBPlusTree.Find(Key: Longint): Longint;
+begin
+
+end;
+
+function TBPlusTree.FindNode(Key: LongInt): TNode;
+
+  function SearchTree( Key : Longint; Node : TNode ) : TNode;
+  var
+    L : LongInt;
+    N : TNode;
+  begin
+    if Node.IsLeaf then
+      Result := Node
+    else
+      begin
+        L := Node.Find( Key );
+        N := TNode.Read( Self, Node.Links[L].Ref );
+        Result := SearchTree( Key, N );
+      end;
+  end;
+
+begin
+  Result := SearchTree( Key, RootNode );
+end;
+
+function TBPlusTree.FirstAvailableNode: LongInt;
+begin
+  if Free <> 0 then
+    begin
+      Stub('Free:  ' + IntToStr(Free) + '  Free list of BPlus Tree Nodes');
+      raise TBPlusTreeError.Create('Missing Functionality');
+    end
+  else
+    begin
+      Last := succ(Last);
+      Result := Last;
+    end;
+end;
+
+function TBPlusTree.GetRootNode: TNode;
+begin
+  Result := TNode.Read( Self, Header.Root );
+end;
+
+procedure TBPlusTree.HeaderRead;
+begin
+  Seek( 0, soBeginning );
+  ReadBuffer( Header, Sizeof( Header ) );
+  Modified := False;
+end;
+
+procedure TBPlusTree.HeaderWrite( Force : Boolean );
+var
+  debug : TBPlusTreeHeader;
+begin
+  if Modified or Force then
+    begin
+      Seek( 0, soBeginning );
+      debug := Header;
+      WriteBuffer( Header, Sizeof( Header ) );
+      Modified := False;
+    end;
+end;
+
+procedure TBPlusTree.HexDump(List: TStrings);
+  var
+    I : LongInt;
+    Line : String;
+    Value : Byte;
+    Node : TNode;
+  begin
+    //List.Clear;
+    List.Add('Dump of idx file');
+    Line := '';
+    Seek( 0, soBeginning );
+    for I := 0 to pred(Size) do
+      begin
+        if (I mod 16) = 0 then
+          begin
+            if not StringSubs.Empty(Line) then
+              List.Add(Line);
+            Line := IntToHex( I, 8);
+          end;
+        ReadBuffer( Value, Sizeof( Value ) );
+        Line := Line + ' ' + IntToHex( Value, 2 );
+      end;
+    List.Add(Line);
+    // Dump the header
+    HeaderRead;
+    List.Add('==============================');
+    List.Add('IdxHeader');
+    List.Add('Root:       ' + IntToHex( Root, 8 ) );
+    List.Add('Free:       ' + IntToHex( Free, 8 ) );
+    List.Add('Last:       ' + IntToHex( Last, 8 ) );
+    List.Add('==============================');
+    for I := 1 to pred(Size div BlockSize) do //Last do
+      begin
+        Node := TNode.Read( Self, I );
+        Node.HexDump( List );
+      end;
+
+end;
+
+procedure TBPlusTree.Insert(Key, Ref: LongInt);
+var
+  Node : TNode;
+  Link : TLink;
+  debug : TBPlusTreeHeader;
+begin
+  zzzDebugHeader;
+  if Root = 0 then // Is the index empty?
+    begin
+      Node := NewNode( Leaf ); // get a leaf node as the root (unique to empty index)
+      Root := Node.NodeNum;
+      Node.Insert( Key, Ref );
+      Write(Node);
+    end
+  else
+    begin
+      Node := FindNode( Key ); // Start at the root, insert at leaf;
+      try
+        zzzDebugHeader;
+        Node.Insert( Key, Ref );
+        zzzDebugHeader;
+      finally
+        Write(Node);
+        zzzDebugHeader;
+      end;
+    end;
+  zzzDebugHeader;
+end;
+
+function TBPlusTree.NewNode( Kind : TNodeKind ): TNode;
+var
+  NN : Longint;
+begin
+  NN := Self.FirstAvailableNode;
+  if NN < 1 then
+    raise TBPlusTreeError.Create('NewNode being created at ' + IntToStr(NN) );
+  case Kind of
+    Leaf, Internal:
+      begin
+        Result.Init( Kind, Self, NN );
+        //Result.BPlusFile := Self;
+        //Result.fNodeNum  := NN;
+      end;
+    FreeNode:
+      raise TBPlusTreeError.Create('Attempt to create FreeNode');
+  end;
+end;
+
+function TBPlusTree.NewRoot: TNode;
+begin
+  Result := NewNode( Internal );
+  Root   := Result.NodeNum;
+end;
+
+constructor TBPlusTree.Open(theFileName: String);
+begin
+  inherited Create( theFileName, fmOpenReadWrite );
+  HeaderRead;
+end;
+
+function TBPlusTree.Read(NodeNum: LongInt): TNode;
+var
+  Data : TNodeData;
+  Offset : Longint;
+begin
+  Offset := NodeNum * BlockSize;
+  Seek( Offset, soBeginning );
+  ReadBuffer( Result.Data, Sizeof( TNodeData ) );
+  Result.NodeNum := NodeNum;
+  Result.BPlusFile := Self;
+  case Result.Data.Kind of
+    FreeNode:
+      raise TBPlusTreeError.Create('Attempt to read "FreeNode"');
+  end;
+end;
+
+procedure TBPlusTree.SetFree(AValue: Longint);
+begin
+  Modified := Header.Free <> AValue;
+  if Modified then
+    Header.Free := AValue;
+  HeaderWrite;
+end;
+
+procedure TBPlusTree.SetLast(AValue: Longint);
+begin
+  Modified := Header.Last <> AValue;
+  if Modified then
+    Header.Last := AValue;
+  HeaderWrite;
+end;
+
+procedure TBPlusTree.SetRoot(AValue: LongInt);
+begin
+  Modified := Header.Root <> AValue;
+  if Modified then
+    Header.Root := AValue;
+  HeaderWrite;
+end;
+
+procedure TBPlusTree.Write(Node: TNode);
+var
+  Offset : LongInt;
+begin
+  if Node.NodeNum < 1 then
+    raise TBPlusTreeError.Create('Writing Node at ' + IntToStr( Node.NodeNum ) + '!');
+  Offset := Node.NodeNum * BlockSize;
+  Seek( Offset, soBeginning );
+  WriteBuffer( Node.Data, BlockSize );
+end;
+
+procedure TBPlusTree.zzzDebugHeader;
+var
+  H : TBPlusTreeHeader;
+begin
+  if QWord(Self) = 0 then
+    Stub('BPlusFile:  ' + IntToHex( QWord(Self), 8 ));
+  H := Self.Header;
+  //if H.Root > 3 then
+  //  Stub('Root > 3');
+  if H.Free > 0 then
+    Stub('Free > 0');
+  Seek( 0, soBeginning );
+  ReadBuffer( H, sizeof(H));
+  //if H.Root > 3 then
+  //  Stub('Root > 3');
+  if H.Free > 0 then
+    Stub('Free > 0');
+end;
+
+
+end.
+

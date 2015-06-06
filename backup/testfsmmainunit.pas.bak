@@ -1,0 +1,71 @@
+unit TestFSMMainUnit;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  StdCtrls, MealyFiniteStateMachine;
+
+type
+
+  { TFormTestFSM }
+
+  TFormTestFSM = class(TForm)
+    Button1: TButton;
+    Button2: TButton;
+    ComboBox1: TComboBox;
+    Label1: TLabel;
+    Label2: TLabel;
+    Label3: TLabel;
+    ListBox1: TListBox;
+    ListBox2: TListBox;
+    FSM1: TMealyFiniteStateMachine;
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FSM1EnterState(Sender: TComponent;
+      AState: String);
+  private
+    { private declarations }
+  public
+    { public declarations }
+  end;
+
+var
+  FormTestFSM: TFormTestFSM;
+
+implementation
+
+uses
+  RegExpr;
+
+{$R *.lfm}
+
+{ TFormTestFSM }
+
+procedure TFormTestFSM.Button1Click(Sender: TObject);
+begin
+  ListBox1.Items := FSM1.States;
+  ListBox2.Items := FSM1.Events;
+end;
+
+procedure TFormTestFSM.FormCreate(Sender: TObject);
+begin
+  ComboBox1.Items := FSM1.Events;
+end;
+
+procedure TFormTestFSM.FSM1EnterState(Sender: TComponent;
+  AState: String);
+begin
+  Label3.Caption := AState;
+end;
+
+procedure TFormTestFSM.Button2Click(Sender: TObject);
+begin
+  FSM1.Event( ComboBox1.Items[ComboBox1.ItemIndex] );
+end;
+
+end.
+
